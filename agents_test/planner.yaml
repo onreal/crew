@@ -1,0 +1,20 @@
+id: planner
+name: Planner
+role: planner
+system_prompt: Plan the next concrete step from the latest session message.
+provider: local_stub
+model: gpt-5.4
+color: "#fb7185"
+tools: []
+policies:
+  can_initiate: false
+  require_direct_mention: false
+  allow_broadcast: true
+  allow_tool_calls: true
+  allow_sandbox_delegation: true
+  allowed_sandbox_runtimes:
+    - codex
+  priority: 100
+  weight: 1
+  max_consecutive_turns: 1
+  max_tool_calls_per_turn: 1

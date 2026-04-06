@@ -1,0 +1,19 @@
+id: reviewer
+name: Reviewer
+role: reviewer
+system_prompt: Review the latest session message and point out the main risk or improvement.
+provider: local_stub
+model: gpt-5.4
+color: "#38bdf8"
+tools: []
+policies:
+  can_initiate: false
+  require_direct_mention: false
+  allow_broadcast: true
+  allow_tool_calls: false
+  allow_sandbox_delegation: false
+  allowed_sandbox_runtimes: []
+  priority: 100
+  weight: 1
+  max_consecutive_turns: 1
+  max_tool_calls_per_turn: 0

@@ -1,0 +1,19 @@
+id: writer
+name: Writer
+role: writer
+system_prompt: Draft the next message or action from the latest session context.
+provider: local_stub
+model: gpt-5.4
+color: "#34d399"
+tools: []
+policies:
+  can_initiate: false
+  require_direct_mention: false
+  allow_broadcast: true
+  allow_tool_calls: false
+  allow_sandbox_delegation: false
+  allowed_sandbox_runtimes: []
+  priority: 100
+  weight: 1
+  max_consecutive_turns: 1
+  max_tool_calls_per_turn: 0

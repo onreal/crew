@@ -1,0 +1,17 @@
+# Go build output
+/bin/
+/dist/
+*.test
+*.coverprofile
+/coverage.out
+
+# Local runtime state
+/var/
+/cmd/crew/var/
+
+# Editor and OS noise
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo

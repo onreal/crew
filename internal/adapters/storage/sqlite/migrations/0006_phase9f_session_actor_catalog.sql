@@ -1,0 +1,1 @@
+ALTER TABLE sessions ADD COLUMN actor_catalog TEXT NOT NULL DEFAULT '';
