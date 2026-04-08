@@ -43,13 +43,15 @@ The CLI now drives the local runtime for core session control:
 - `session tail` now lets operators watch the persisted session stream in real time from the terminal
 - `tui attach` now lets operators join the same persisted session room in a full-screen terminal UI, send messages, and trigger bounded free-mode advancement from one terminal
 - `tui attach` can now auto-run several free-mode turns per operator message, which is the current way to approximate a room where multiple agents answer in sequence
-- `tui attach` now has operator-facing presentation controls for theme, timestamps, message density, sidebar visibility, and per-agent colors without changing canonical runtime behavior
+- `tui attach` now has operator-facing presentation controls for theme, timestamps, message density, compact participant-strip visibility, and per-agent colors without changing canonical runtime behavior
 - `tui attach` now renders operator messages immediately and keeps free-mode advancement in background room actions so live chats do not appear frozen while agents are replying
 - `tui attach` now exposes in-room `/` command discovery and `@agent` recipient selection from the input box itself, so operators can discover room controls and target one or more agents without leaving the live chat flow
 - `tui attach` now defaults to a session-wide scrollback when the room is not pinned to a single conversation, so operators can recover older conversation history with normal scrolling while still sending new messages into the currently selected conversation
-- `tui attach` now groups consecutive sender messages, shows lightweight per-agent thinking/queued indicators during auto runs, and exposes richer runtime/task/vector side panels from canonical runtime state
+- `tui attach` now groups consecutive sender messages, shows lightweight per-agent thinking/queued indicators during auto runs, and keeps a compact in-room participant strip with total message count and per-agent counts instead of spending terminal width on a separate side panel
+- `tui attach` now also uses very wide terminals to show a decorative ASCII `NOSTATE` / `CREW CLI` pane beside the input row, giving the room stronger identity without reducing the full-width conversation viewport or changing canonical runtime behavior
 - `tui attach` now keeps the active room pane aligned with the conversation being sent into and renders pending agent activity in live room status instead of the scrollback, so newly submitted turns do not appear to disappear while background work is running
 - `tui attach` can now optionally split the room into active and preview conversation panes when a session contains multiple conversations
+- `tui attach` now supports explicit clipboard workflows inside the full-screen room without blocking ordinary terminal selection: mouse reporting stays off so operators can select and copy visible chat text normally, and `Ctrl+Y` copies the full visible TUI snapshot so operators can lift chat, compact status, or preview context in one action
 - `session send` lets operators add user messages to a running session through the same persisted runtime path
 - `session send --to-agent` now lets operators target one or more specific agents through canonical direct-message routing
 - `session send --reply-to` now lets operators keep one conversation explicitly threaded against prior persisted messages

@@ -371,7 +371,7 @@ Notes:
 - `ui.theme` controls the full-screen attach palette; supported values are `sunrise` and `graphite`
 - `ui.show_timestamps` toggles timestamps in the full-screen room
 - `ui.compact_messages` switches the room feed between denser and more spaced message rendering
-- `ui.attach_sidebar` toggles the right-hand sidebar in the full-screen room
+- `ui.attach_sidebar` toggles the compact participant/status strip rendered below the full-width chat room
 - `ui.agent_colors` lets you override sender colors in the full-screen room by agent ID
 
 Environment variable examples:
@@ -1269,7 +1269,7 @@ go run ./cmd/crew tui attach --session-id session-1 --auto-steps 3 --orchestrati
 go run ./cmd/crew tui attach --session-id session-1 --auto-steps 3 --reply-routing latest_speaker
 ```
 
-`tui attach` now opens a full-screen Bubble Tea room on a real TTY. It uses the same persisted session stream as `session tail`, but adds styled conversation rendering, a bottom input box, keyboard shortcuts, and an optional right-hand sidebar. When stdin/stdout are not real terminal devices, it falls back to the earlier line-oriented attach mode so tests and scripted use still work.
+`tui attach` now opens a full-screen Bubble Tea room on a real TTY. It uses the same persisted session stream as `session tail`, but adds styled conversation rendering, a bottom input box, keyboard shortcuts, and a compact participant/status strip below the chat instead of reserving a right-hand sidebar. When stdin/stdout are not real terminal devices, it falls back to the earlier line-oriented attach mode so tests and scripted use still work.
 
 This is also the room that `session start --mode free` opens automatically on a real terminal for a brand-new session. `tui attach` remains the explicit reattach path for existing sessions.
 
@@ -1293,14 +1293,15 @@ Interactive behavior:
 - round-robin now advances across the full configured agent roster even when the previous speaker is temporarily blocked by `max_consecutive_turns`, so shared-room auto runs do not bounce between only two agents
 - `Ctrl+C` or `Esc` exits the full-screen room
 - `Ctrl+L` refreshes the room snapshot immediately
-- mouse wheel and trackpad scrolling now move through the room viewport backlog on real terminals
+- `Ctrl+Y` copies the current visible TUI snapshot, including the room, compact status strip, and any visible preview pane
+- normal terminal mouse selection is enabled again, so you can highlight visible TUI text and copy it with your terminal's usual copy gesture
 - `Up` and `Down` navigate input history when no assist is open, or move through `/` and `@` suggestions when an assist is open
 - `PgUp` and `PgDn` scroll the room viewport
 - `Home` and `End` jump to the top or bottom of the room
 - `[` and `]` switch the active conversation when the room is not pinned to one conversation
 - `Tab` accepts the active `/` or `@` suggestion; when no assist is open it still toggles split conversation panes when multiple conversations are present
 - `Ctrl+D` shows recent inputs in the status line
-- `ui.attach_sidebar` controls whether the room shows the participant/status sidebar
+- `ui.attach_sidebar` controls whether the room shows the compact participant/status strip below the chat viewport
 - `ui.attach_split_panes` controls whether the room can show active plus preview conversation panes
 - `ui.show_timestamps`, `ui.compact_messages`, and `ui.agent_colors` control the room presentation
 - the room now uses a fixed-height shell for header, chat viewport, input, and footer, so typing and live status updates do not make the chatboard jump
@@ -1309,9 +1310,11 @@ Interactive behavior:
 - pending agent activity now renders in the room header as lightweight `thinking` and `queued` status, so live runs stay visible without pushing real messages out of the chat backlog
 - reply messages now show a short `in reply to ...` preview when the upstream message is available in the current session snapshot
 - provider/runtime failures in the attached room now also appear as local system notices in the conversation instead of only in the header state
-- the sidebar now includes participant activity, provider/runtime state, vector state, task counts, conversation info, and recent inputs
-- the sidebar now also shows total persisted session messages and per-participant message counts under a dedicated `Messages` section, omitting participants who have not spoken yet
-- the sidebar now also surfaces the latest task owner/instruction and the most recent vector rebuild timestamp when available
+- the room now stays full-width even when participant status is enabled; no right-hand sidebar space is reserved
+- on wide terminals, the input row now reserves a decorative right-side ASCII panel at roughly 20% width, showing `NOSTATE` and `CREW CLI`; on narrower terminals that panel disappears entirely while the conversation viewport stays full width
+- the compact status strip now keeps only total persisted message count plus every configured participant with that participant's message count
+- participant names in the compact strip shrink with ellipsis as the terminal narrows so the full participant roster stays visible
+- room and preview panes now use flat borders rather than rounded corners so the layout remains dense and predictable in terminal grids
 
 ## Full Operational Walkthrough
 
