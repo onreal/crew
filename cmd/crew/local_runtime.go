@@ -20,6 +20,8 @@ var (
 )
 
 const agentsDirEnvVar = "CREW_AGENTS_DIR"
+const localAgentsDirName = "crew_agents"
+const legacyInstalledAgentsDirName = "agents"
 
 func (s *runtimeState) withLocalRuntime(
 	ctx context.Context,
@@ -135,17 +137,7 @@ func resolveSandboxProviders(cfg platform.SandboxConfig) map[string]runtimeadapt
 
 func resolveAgentsDir() (string, error) {
 	if configured := strings.TrimSpace(os.Getenv(agentsDirEnvVar)); configured != "" {
-		info, err := os.Stat(configured)
-		if err != nil {
-			if os.IsNotExist(err) {
-				return "", fmt.Errorf("%s %q was not found", agentsDirEnvVar, configured)
-			}
-			return "", fmt.Errorf("stat %s %q: %w", agentsDirEnvVar, configured, err)
-		}
-		if !info.IsDir() {
-			return "", fmt.Errorf("%s %q is not a directory", agentsDirEnvVar, configured)
-		}
-		return configured, nil
+		return requireDirectory(configured, agentsDirEnvVar)
 	}
 
 	workingDir, err := os.Getwd()
@@ -153,25 +145,19 @@ func resolveAgentsDir() (string, error) {
 		return "", fmt.Errorf("resolve working directory for agents: %w", err)
 	}
 
-	current := workingDir
-	for {
-		candidate := filepath.Join(current, "agents")
-		info, err := os.Stat(candidate)
-		if err == nil && info.IsDir() {
-			return candidate, nil
-		}
-		if err != nil && !os.IsNotExist(err) {
-			return "", fmt.Errorf("stat agents directory %q: %w", candidate, err)
-		}
-
-		parent := filepath.Dir(current)
-		if parent == current {
-			break
-		}
-		current = parent
+	if discovered, err := findNearestAgentsDir(workingDir); err != nil {
+		return "", err
+	} else if discovered != "" {
+		return discovered, nil
 	}
 
-	return "", fmt.Errorf("could not find agents directory from %q upward", workingDir)
+	if fallback, err := resolveInstalledAgentsFallbackDir(); err != nil {
+		return "", err
+	} else if fallback != "" {
+		return fallback, nil
+	}
+
+	return "", fmt.Errorf("could not find %s directory from %q upward and no installed fallback catalog was found", localAgentsDirName, workingDir)
 }
 
 func (s *runtimeState) resolveActiveAgentsDir() (string, error) {
@@ -221,4 +207,75 @@ func resolveActorsDirFromRoot(rootDir string, selection string) (string, error) 
 		return "", fmt.Errorf("actors catalog %q is not a directory", candidate)
 	}
 	return candidate, nil
+}
+
+func requireDirectory(path string, label string) (string, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", fmt.Errorf("%s %q was not found", label, path)
+		}
+		return "", fmt.Errorf("stat %s %q: %w", label, path, err)
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("%s %q is not a directory", label, path)
+	}
+	return path, nil
+}
+
+func findNearestAgentsDir(start string) (string, error) {
+	current := start
+	for {
+		candidate := filepath.Join(current, localAgentsDirName)
+		info, err := os.Stat(candidate)
+		if err == nil && info.IsDir() {
+			return candidate, nil
+		}
+		if err != nil && !os.IsNotExist(err) {
+			return "", fmt.Errorf("stat %s directory %q: %w", localAgentsDirName, candidate, err)
+		}
+
+		parent := filepath.Dir(current)
+		if parent == current {
+			break
+		}
+		current = parent
+	}
+
+	return "", nil
+}
+
+func resolveInstalledAgentsFallbackDir() (string, error) {
+	dataHome, err := crewDataHome()
+	if err != nil {
+		return "", err
+	}
+
+	candidates := []string{
+		filepath.Join(dataHome, "crew", localAgentsDirName),
+		filepath.Join(dataHome, "crew", legacyInstalledAgentsDirName),
+	}
+	for _, candidate := range candidates {
+		info, statErr := os.Stat(candidate)
+		if statErr == nil && info.IsDir() {
+			return candidate, nil
+		}
+		if statErr != nil && !os.IsNotExist(statErr) {
+			return "", fmt.Errorf("stat installed agent catalog %q: %w", candidate, statErr)
+		}
+	}
+
+	return "", nil
+}
+
+func crewDataHome() (string, error) {
+	if configured := strings.TrimSpace(os.Getenv("XDG_DATA_HOME")); configured != "" {
+		return configured, nil
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("resolve home directory for installed agent catalog: %w", err)
+	}
+	return filepath.Join(home, ".local", "share"), nil
 }

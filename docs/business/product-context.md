@@ -36,7 +36,8 @@ The first implementation slice must already provide operator value by making run
 The CLI now drives the local runtime for core session control:
 
 - the repository now ships an `install.sh` path that builds and installs the `crew` binary into an operator-selected bin directory so local setup does not depend on custom build steps
-- the installed path now includes a PATH-facing wrapper, supported shell-profile PATH bootstrap across login and interactive startup files where appropriate, a seeded operator-local agent catalog, a default home config, and dedicated runtime-state directories so the CLI can start from outside the repository without writing SQLite state into arbitrary working directories
+- the installed path now includes a PATH-facing wrapper, supported shell-profile PATH bootstrap across login and interactive startup files where appropriate, a seeded operator-local fallback agent catalog that is refreshed on reinstall, a default home config, and dedicated runtime-state directories so the CLI can start from outside the repository without writing SQLite state into arbitrary working directories
+- `init` now lets an operator bootstrap a workspace-local `crew_agents/` catalog in any directory, so the default agent roster travels with the project instead of being trapped in one installed global catalog
 - the CLI now exposes `config sync` so operators can intentionally copy the YAML file they are editing into the installed wrapper's default config location instead of guessing which config source the installed command is using, with the direct operator-facing form `crew config sync ./crew.yaml`
 - `session start` creates and starts a local session, persists any `--actors <selector>` choice onto that session, and on a real terminal now drops free-mode sessions directly into the live chat room so operators do not need a second attach command just to begin talking
 - `session pause`, `session resume`, `session stop`, and `session inspect` work across separate CLI invocations through the configured SQLite database at `storage.path`
@@ -55,13 +56,14 @@ The CLI now drives the local runtime for core session control:
 - `session send` lets operators add user messages to a running session through the same persisted runtime path
 - `session send --to-agent` now lets operators target one or more specific agents through canonical direct-message routing
 - `session send --reply-to` now lets operators keep one conversation explicitly threaded against prior persisted messages
-- `agents list` and `agents validate` let operators inspect and verify the filesystem-backed default agent catalog without touching live session state
+- `agents list` and `agents validate` let operators inspect and verify the filesystem-backed active agent catalog without touching live session state
 - `agents sync` now lets operators explicitly persist the current YAML agent catalog into SQLite when they want prompt/model/policy changes applied immediately, instead of waiting for the next free-mode turn to reseed agents opportunistically
 - `session step` lets operators execute one deterministic agent turn in free mode using the filesystem-backed agent catalog without needing an external provider, and can be scoped to a single conversation transcript
 - `session step` and `session auto` now expose agent-selection diagnostics and support explicit orchestration-mode selection
 - free-mode now also exposes explicit reply-routing selection independent from orchestration, so operators can choose between latest-speaker reply behavior and obligation-queue reply behavior without changing who is eligible to speak next
 - `session auto` lets operators run a bounded multi-turn free-mode exchange with explicit stop reasons and per-step visibility
 - edits to filesystem-backed agent YAML are now reapplied before each free-mode turn, so attached sessions can pick up changed agent definitions without restarting the runtime
+- local workspace catalogs now win over the installed home catalog, while the home catalog remains a fallback when an operator runs `crew` outside any initialized workspace
 - alternate actor catalogs chosen at `session start` now remain bound to that session across later `session step`, `session auto`, and `tui attach` invocations
 - free-mode generation can now mix per-agent text providers in the same session, with provider connection settings coming from config and provider identity living on each agent
 - the same named provider family may now appear in both roles at once, for example an agent can use `provider: codex` for direct chat and `delegation_runtime: codex` for sandbox execution
@@ -92,7 +94,7 @@ In the current slice, sandboxed CLI runtimes are configured as a named catalog u
 
 In the current slice, agent YAML may define `delegation_runtime` and optional `sandbox_workspace_root`. That makes sandbox delegation an agent-owned behavior instead of a process-global default, while still preserving restart-safe task routing because persisted tasks carry the chosen runtime and any sandbox-root override.
 
-In the current slice, the default text-agent catalog is filesystem-backed under `agents/`, so operators can change shipped agent behavior by editing those YAML files instead of patching hardcoded runtime seed lists.
+In the current slice, the default text-agent catalog is filesystem-backed under `crew_agents/`, so operators can change workspace agent behavior by editing those YAML files instead of patching hardcoded runtime seed lists. `crew init` seeds that local catalog with placeholder planner, reviewer, and writer agents, while the installed home catalog acts only as fallback when no local workspace catalog exists.
 
 In the current slice, agent YAML now carries both `provider` and `model`, so operator edits can change not only prompting and policy but also which text provider handles a given agent turn without changing process-global config.
 

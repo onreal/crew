@@ -130,7 +130,7 @@ func TestAgentsListUsesCREWAgentsDirOverride(t *testing.T) {
 
 func TestResolveSelectedAgentsDirUsesSelectorUnderRoot(t *testing.T) {
 	rootDir := t.TempDir()
-	agentsRoot := filepath.Join(rootDir, "agents")
+	agentsRoot := filepath.Join(rootDir, localAgentsDirName)
 	if err := os.MkdirAll(filepath.Join(agentsRoot, "team-a"), 0o755); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
 	}
@@ -147,7 +147,7 @@ func TestResolveSelectedAgentsDirUsesSelectorUnderRoot(t *testing.T) {
 
 func TestResolveSelectedAgentsDirRejectsTraversal(t *testing.T) {
 	rootDir := t.TempDir()
-	agentsRoot := filepath.Join(rootDir, "agents")
+	agentsRoot := filepath.Join(rootDir, localAgentsDirName)
 	if err := os.MkdirAll(agentsRoot, 0o755); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
 	}

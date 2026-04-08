@@ -13,7 +13,7 @@ The runtime core turns the application use cases into a live local execution eng
 - support CLI re-entry through SQLite-backed runtime persistence across separate command invocations
 - preserve projected stream history across CLI re-entry through persisted session stream rows rather than transient in-process memory
 - repair stale persisted stream state on read-only restart by draining pending durable outbox rows before inspection
-- seed and update canonical persisted agent records from the filesystem-backed `agents/` catalog during runtime startup
+- seed and update canonical persisted agent records from the filesystem-backed `crew_agents/` catalog selected for the current workspace during runtime startup
 
 ## Business Guardrails
 

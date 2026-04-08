@@ -19,6 +19,7 @@ This directory is the source of truth for why features exist and how they are ex
 - keep persistence behavior documented as durability, replay, recovery, and fallback semantics evolve
 - if vector retrieval is introduced or planned, document the operator value separately from canonical durability so the two concerns do not get conflated
 - if external provider-backed generation is introduced, document configuration, failure impact, and determinism tradeoffs separately from local-stub execution
+- if workspace-local agent catalog discovery or initialization changes, document the operator value, fallback behavior, and failure impact explicitly
 - if provider selection moves into canonical agent state, document the operator value and failure impact of mixed-provider sessions explicitly
 - if free-mode reply routing changes, document the operator value and tradeoffs of agent-selection strategy separately from reply-addressing strategy so the two controls do not get conflated
 - if sandboxed CLI runtimes are introduced, document operator value, isolation policy, delegation semantics, and failure impact separately from plain-text LLM generation

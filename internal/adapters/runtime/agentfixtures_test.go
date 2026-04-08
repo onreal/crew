@@ -7,6 +7,8 @@ import (
 	"testing"
 )
 
+const testAgentsDirName = "crew_agents"
+
 func writeDefaultAgentsDir(t *testing.T) string {
 	t.Helper()
 
@@ -21,7 +23,7 @@ func writeDefaultAgentsDir(t *testing.T) string {
 		t.Fatalf("ReadDir(%q) error = %v", sourceDir, err)
 	}
 
-	targetDir := filepath.Join(t.TempDir(), "agents")
+	targetDir := filepath.Join(t.TempDir(), testAgentsDirName)
 	if err := os.MkdirAll(targetDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll(%q) error = %v", targetDir, err)
 	}
@@ -47,7 +49,7 @@ func writeSelectorAgentsDir(t *testing.T, rootDir string, selector string) strin
 	t.Helper()
 
 	sourceDir := writeDefaultAgentsDir(t)
-	targetRoot := filepath.Join(rootDir, "agents")
+	targetRoot := filepath.Join(rootDir, testAgentsDirName)
 	if err := os.MkdirAll(targetRoot, 0o755); err != nil {
 		t.Fatalf("MkdirAll(%q) error = %v", targetRoot, err)
 	}

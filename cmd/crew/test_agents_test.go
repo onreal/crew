@@ -34,6 +34,19 @@ func setSessionStartAutoAttachDetectorForTest(t *testing.T, fn func(in io.Reader
 	})
 }
 
+func useDefaultAgentsDirResolverForTest(t *testing.T) {
+	t.Helper()
+
+	previous := agentsDirResolver
+	previousIsDefault := agentsDirResolverIsDefault
+	agentsDirResolver = resolveAgentsDir
+	agentsDirResolverIsDefault = true
+	t.Cleanup(func() {
+		agentsDirResolver = previous
+		agentsDirResolverIsDefault = previousIsDefault
+	})
+}
+
 func ensureDefaultAgentsDirResolverForTest(t *testing.T) string {
 	t.Helper()
 
@@ -73,7 +86,7 @@ func copyTestAgentsCatalog(t *testing.T, targetRoot string) string {
 	t.Helper()
 
 	sourceDir := testAgentsCatalogDir(t)
-	targetDir := filepath.Join(targetRoot, "agents")
+	targetDir := filepath.Join(targetRoot, localAgentsDirName)
 	return copyAgentsCatalogDir(t, sourceDir, targetDir)
 }
 
@@ -81,7 +94,7 @@ func copyTestAgentsCatalogToSelector(t *testing.T, targetRoot, selector string) 
 	t.Helper()
 
 	sourceDir := testAgentsCatalogDir(t)
-	targetDir := filepath.Join(targetRoot, "agents", selector)
+	targetDir := filepath.Join(targetRoot, localAgentsDirName, selector)
 	return copyAgentsCatalogDir(t, sourceDir, targetDir)
 }
 

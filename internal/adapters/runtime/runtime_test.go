@@ -165,7 +165,7 @@ func TestRuntimeStartDeactivatesAgentsMissingFromAgentsDir(t *testing.T) {
 		t.Fatalf("SeedAgent(reviewer) error = %v", err)
 	}
 
-	agentsDir := filepath.Join(t.TempDir(), "agents")
+	agentsDir := filepath.Join(t.TempDir(), testAgentsDirName)
 	if err := os.MkdirAll(agentsDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll(%q) error = %v", agentsDir, err)
 	}

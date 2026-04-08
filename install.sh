@@ -14,7 +14,7 @@ CREW_STATE_DIR=${CREW_STATE_DIR:-$STATE_HOME/crew}
 CREW_RUNTIME_BIN=$CREW_DATA_DIR/bin/$BIN_NAME
 CREW_WRAPPER_BIN=$INSTALL_DIR/$BIN_NAME
 CREW_CONFIG_PATH=$CREW_CONFIG_DIR/crew.yaml
-CREW_AGENTS_DIR=$CREW_DATA_DIR/agents
+CREW_AGENTS_DIR=$CREW_DATA_DIR/crew_agents
 CREW_SANDBOX_ROOT=$CREW_STATE_DIR/sandboxes
 CREW_DB_PATH=$CREW_STATE_DIR/crew.db
 CREW_RUNTIME_STATE_PATH=$CREW_STATE_DIR/crew-runtime.json
@@ -214,10 +214,13 @@ install -m 0755 "$TMP_DIR/$BIN_NAME" "$CREW_RUNTIME_BIN"
 
 if [ ! -e "$CREW_AGENTS_DIR/AGENTS.MD" ]; then
 	mkdir -p "$CREW_AGENTS_DIR"
-	cp -R "$ROOT_DIR/agents/." "$CREW_AGENTS_DIR"
+	cp -R "$ROOT_DIR/crew_agents/." "$CREW_AGENTS_DIR"
 	printf 'seeded agent catalog at %s\n' "$CREW_AGENTS_DIR"
 else
-	printf 'kept existing agent catalog at %s\n' "$CREW_AGENTS_DIR"
+	rm -rf "$CREW_AGENTS_DIR"
+	mkdir -p "$CREW_AGENTS_DIR"
+	cp -R "$ROOT_DIR/crew_agents/." "$CREW_AGENTS_DIR"
+	printf 'refreshed agent catalog at %s\n' "$CREW_AGENTS_DIR"
 fi
 
 if [ ! -f "$CREW_CONFIG_PATH" ]; then
@@ -263,13 +266,9 @@ cat >"$TMP_DIR/$BIN_NAME.wrapper" <<EOF
 set -eu
 
 DEFAULT_CONFIG_PATH="$CREW_CONFIG_PATH"
-DEFAULT_AGENTS_DIR="$CREW_AGENTS_DIR"
 CREW_BIN="$CREW_RUNTIME_BIN"
 
 CONFIG_PATH=\${CREW_CONFIG_PATH:-\$DEFAULT_CONFIG_PATH}
-AGENTS_DIR=\${CREW_AGENTS_DIR:-\$DEFAULT_AGENTS_DIR}
-
-export CREW_AGENTS_DIR="\$AGENTS_DIR"
 exec "\$CREW_BIN" --config "\$CONFIG_PATH" "\$@"
 EOF
 install -m 0755 "$TMP_DIR/$BIN_NAME.wrapper" "$CREW_WRAPPER_BIN"

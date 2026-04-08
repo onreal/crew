@@ -47,9 +47,10 @@ func newRootCmd(build buildInfo) *cobra.Command {
 	}
 
 	root.PersistentFlags().StringVar(&state.configPath, "config", "", "Path to a YAML configuration file")
-	root.PersistentFlags().StringVar(&state.actors, "actors", "", "Actor catalog selector under the active agents directory; defaults to the root catalog")
+	root.PersistentFlags().StringVar(&state.actors, "actors", "", "Actor catalog selector under the active crew_agents directory; defaults to the root catalog")
 
 	root.AddCommand(
+		newInitCmd(),
 		newVersionCmd(state),
 		newConfigCmd(state),
 		newAgentsCmd(state),
@@ -200,7 +201,7 @@ func newAgentsCmd(state *runtimeState) *cobra.Command {
 
 	cmd.AddCommand(&cobra.Command{
 		Use:   "list",
-		Short: "List agents loaded from the agents directory",
+		Short: "List agents loaded from the active catalog directory",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			agentsDir, err := state.resolveActiveAgentsDir()
@@ -222,7 +223,7 @@ func newAgentsCmd(state *runtimeState) *cobra.Command {
 
 	cmd.AddCommand(&cobra.Command{
 		Use:   "validate",
-		Short: "Validate all agent files in the agents directory",
+		Short: "Validate all agent files in the active catalog directory",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			agentsDir, err := agentsDirResolver()

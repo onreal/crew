@@ -232,7 +232,7 @@ func TestSQLiteRuntimeDeactivatesAgentsMissingFromCatalogAcrossRestart(t *testin
 		t.Fatalf("Close() error = %v", err)
 	}
 
-	nextAgentsDir := filepath.Join(t.TempDir(), "agents")
+	nextAgentsDir := filepath.Join(t.TempDir(), testAgentsDirName)
 	if err := os.MkdirAll(nextAgentsDir, 0o755); err != nil {
 		t.Fatalf("MkdirAll(%q) error = %v", nextAgentsDir, err)
 	}

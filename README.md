@@ -7,9 +7,9 @@ You can run and play with it now.
 Current implemented surface:
 
 - local session lifecycle management through the CLI
-- filesystem-backed default agent catalog under `agents/`
-- deterministic single-turn free-mode stepping with agents loaded from the `agents/` directory
-- bounded multi-turn free-mode auto execution with agents loaded from the `agents/` directory
+- filesystem-backed default agent catalog under `crew_agents/`
+- deterministic single-turn free-mode stepping with agents loaded from the `crew_agents/` directory
+- bounded multi-turn free-mode auto execution with agents loaded from the `crew_agents/` directory
 - optional per-agent provider-backed free-mode generation behind the same CLI/runtime flow
 - persisted sandbox task creation and execution through a Codex-backed copied-workspace runtime
 - mixed-provider free-mode delegation where a text agent can create a sandbox task and emit sandbox result messages back into the same conversation
@@ -64,7 +64,7 @@ Optional Phase 5B work:
 
 Optional provider-backed free-mode generation:
 
-- text-provider selection is now per agent through `agents/*.yaml`
+- text-provider selection is now per agent through `crew_agents/*.yaml`
 - provider connection settings live under top-level `providers:` config entries such as `openai`, `gemini`, and `grok`
 - the same session may mix agents from different text providers while keeping the same persistence, orchestration, and audit behavior
 - the OpenAI-style text adapter returns a structured response envelope, so providers can request sandbox delegation without leaking provider-specific tool formats into the runtime
@@ -82,6 +82,12 @@ Run the CLI directly:
 
 ```bash
 go run ./cmd/crew version
+```
+
+Initialize a local workspace catalog:
+
+```bash
+go run ./cmd/crew init
 ```
 
 Start a session:
@@ -182,13 +188,14 @@ What `install.sh` provisions:
 
 - installs a small `crew` wrapper into `INSTALL_DIR`
 - installs the real compiled binary under `${XDG_DATA_HOME:-$HOME/.local/share}/crew/bin/crew`
-- seeds an operator-local agent catalog under `${XDG_DATA_HOME:-$HOME/.local/share}/crew/agents` on first install
+- seeds an operator-local fallback agent catalog under `${XDG_DATA_HOME:-$HOME/.local/share}/crew/crew_agents` on first install
+- refreshes that installed fallback agent catalog from the current repository state on reinstall
 - writes a default home config to `${XDG_CONFIG_HOME:-$HOME/.config}/crew/crew.yaml` on first install
 - creates dedicated runtime-state directories under `${XDG_STATE_HOME:-$HOME/.local/state}/crew`
 - updates a supported shell startup file so `INSTALL_DIR` is added to `PATH` when it is not already there
 - validates that the installed wrapper can read the seeded config and agent catalog immediately
 
-Install behavior intentionally preserves an existing home config or agent catalog instead of overwriting local edits.
+Install behavior intentionally preserves an existing home config, but reinstall now refreshes the installed fallback `crew_agents` catalog so the command picks up the latest shipped agent changes.
 
 Supported PATH bootstrap targets:
 
@@ -333,7 +340,7 @@ Notes:
 - the installed wrapper runs with `--config $HOME/.config/crew/crew.yaml` by default unless you override it with `CREW_CONFIG_PATH` or an explicit CLI `--config`
 - `config sync` copies the active YAML file into that installed default config path so the installed `crew` command picks up the same config without rerunning `install.sh`
 - when you are editing a repo-local config and want the installed `crew` command to use it, prefer `crew config sync ./crew.yaml`
-- the active agent catalog root may be pinned with `CREW_AGENTS_DIR`; the installed wrapper uses that to point at the seeded home catalog, while source-tree usage may still discover `./agents` by walking upward from the current working directory
+- the active agent catalog root may be pinned with `CREW_AGENTS_DIR`; otherwise `crew` discovers the nearest `./crew_agents` by walking upward from the current working directory and falls back to the installed home catalog only when no local catalog exists
 - `providers.<name>` configures transport, auth, or CLI settings for that named text provider
 - agent files now carry both `provider:` and `model:`; provider choice is part of canonical agent state, not a process-global switch
 - `provider: local_stub` keeps deterministic local generation; `provider: openai`, `provider: gemini`, and `provider: grok` use configured HTTP providers; `provider: codex` talks through the local Codex CLI
@@ -357,8 +364,8 @@ Notes:
 - copied sandbox preparation rejects symlinked source entries in the source workspace for now, because recreated symlinks would break workspace isolation
 - sandbox delegation is policy-gated by the selected agent; tool access alone does not imply the agent may delegate to every runtime
 - task IDs must be simple identifiers, not filesystem paths; path separators and absolute-path forms are rejected
-- default agents are loaded from `./agents/*.yaml`; editing those files changes the seeded agent catalog on the next free-mode turn and on the next CLI invocation
-- `--actors <selector>` still narrows `agents list|validate|sync` to `./agents/<selector>/*.yaml`
+- default agents are loaded from `./crew_agents/*.yaml`; editing those files changes the active local catalog on the next free-mode turn and on the next CLI invocation
+- `--actors <selector>` still narrows `agents list|validate|sync` to `./crew_agents/<selector>/*.yaml`
 - on `session start`, `--actors <selector>` is now persisted on the session itself; later `session send`, `session step`, `session auto`, and `tui attach` use that stored catalog automatically
 - agent files may define `policies.priority` and `policies.weight`; higher values are considered earlier by the deterministic base ordering before mode-specific orchestration is applied
 - `session.orchestration_mode` sets the default free-mode agent-selection strategy for `session step`, `session auto`, and `tui attach`
@@ -446,14 +453,14 @@ go run ./cmd/crew --config /tmp/crew.yaml config show
 
 Current state:
 
-- there is no `crew agent create` CLI command yet
-- the default agent catalog now lives in `./agents`
+- `crew init` creates a local `./crew_agents` catalog with placeholder planner, reviewer, and writer agents
+- the default agent catalog now lives in `./crew_agents`
 - each `.yaml` or `.yml` file in that directory defines one agent
 - runtime startup seeds missing agents from those files and updates existing agents with the same IDs
 
 ### Add Agents In Files
 
-The simplest current path is to create a new file under `./agents`, for example `./agents/architect.yaml`.
+The simplest current path is to run `crew init` once, then create a new file under `./crew_agents`, for example `./crew_agents/architect.yaml`.
 
 Each agent must define:
 
@@ -584,7 +591,7 @@ Two separate Codex controls exist on purpose:
 
 Those values may match on the same agent, or they may differ.
 
-The active default operator catalog is whatever lives under `agents/`.
+The active default operator catalog is the nearest `crew_agents/` directory discovered from the current working directory. If no local catalog exists, `crew` falls back to the installed home catalog.
 
 On runtime startup:
 
@@ -595,9 +602,9 @@ On runtime startup:
 
 On free-mode stepping and auto runs:
 
-- the runtime re-reads `./agents/*.yaml` before each run
+- the runtime re-reads `./crew_agents/*.yaml` before each run
 - attached sessions therefore pick up edited agent definitions on the next turn without requiring a restart
-- if the session was started with `--actors team-a`, those same behaviors apply to `./agents/team-a/*.yaml` for that session on later turns and attaches without repeating the flag
+- if the session was started with `--actors team-a`, those same behaviors apply to `./crew_agents/team-a/*.yaml` for that session on later turns and attaches without repeating the flag
 
 Important limitation:
 
@@ -804,19 +811,19 @@ reviewer -> planner: here is the risk follow-up you asked for
 Persisted team catalog when free-mode start opens the room immediately:
 
 ```bash
-go run ./cmd/crew --actors el-team session start --mode free
+go run ./cmd/crew --actors team-a session start --mode free
 ```
 
 Then inside the room:
 
 ```text
-@2pac @eminem trade bars about the launch plan
+@planner @reviewer debate the launch plan
 ```
 
 Expected room behavior:
 
-- the session keeps using `agents/el-team/*.yaml` even though `tui attach` does not repeat `--actors`
-- the first eligible `el-team` agent answers the operator
+- the session keeps using `crew_agents/team-a/*.yaml` even though `tui attach` does not repeat `--actors`
+- the first eligible `team-a` agent answers the operator
 - if that first reply mentions the other agent, obligation mode still lets the second agent answer the operator before any agent-to-agent follow-up
 - the TUI transcript should therefore show the operator-facing replies before the cross-agent continuation
 
@@ -824,7 +831,7 @@ Expected room behavior:
 
 If you want two agents to discuss a topic, the current path is:
 
-1. Add both agents as separate YAML files under `./agents`.
+1. Add both agents as separate YAML files under `./crew_agents`.
 2. Make sure both allow the kind of messages you want them to answer.
 3. Start a free session.
 4. Send a user prompt that kicks off the topic.
@@ -979,6 +986,7 @@ Top-level commands:
 
 - `crew version`
 - `crew help`
+- `crew init`
 - `crew config show`
 - `crew config sync [source-config-path] [--target <path>]`
 - `crew agents list`
@@ -1051,6 +1059,24 @@ Print the available command surface as JSON:
 go run ./cmd/crew help
 ```
 
+### `init`
+
+Create a local `./crew_agents` catalog in the current directory.
+
+```bash
+crew init
+go run ./cmd/crew init
+```
+
+This command creates:
+
+- `./crew_agents/AGENTS.MD`
+- `./crew_agents/planner.yaml`
+- `./crew_agents/reviewer.yaml`
+- `./crew_agents/writer.yaml`
+
+`crew init` fails if `./crew_agents` already exists.
+
 ### `agents list`
 
 List the agent definitions loaded from the filesystem catalog:
@@ -1062,7 +1088,7 @@ go run ./cmd/crew --actors team-a agents list
 
 ### `agents validate`
 
-Validate every agent file under `./agents`:
+Validate every agent file under `./crew_agents`:
 
 ```bash
 go run ./cmd/crew agents validate
@@ -1071,7 +1097,7 @@ go run ./cmd/crew --actors team-a agents validate
 
 ### `agents sync`
 
-Persist the current `agents/*.yaml` catalog into the configured SQLite backing store immediately:
+Persist the current `crew_agents/*.yaml` catalog into the configured SQLite backing store immediately:
 
 ```bash
 go run ./cmd/crew agents sync
@@ -1461,7 +1487,7 @@ If `--conversation-id` is omitted, the CLI uses `conversation-1`.
 
 ### `session step`
 
-Execute one deterministic free-mode agent turn using the agents currently loaded from `./agents`.
+Execute one deterministic free-mode agent turn using the agents currently loaded from the active `crew_agents` catalog.
 
 ```bash
 go run ./cmd/crew session step --session-id session-1
@@ -1486,7 +1512,7 @@ The JSON response now includes:
 
 ### `session auto`
 
-Execute a bounded multi-turn free-mode run using the agents currently loaded from `./agents`.
+Execute a bounded multi-turn free-mode run using the agents currently loaded from the active `crew_agents` catalog.
 
 ```bash
 go run ./cmd/crew session auto --session-id session-1 --max-steps 3
@@ -1559,7 +1585,7 @@ An isolated optional Phase 5B adapter also exists under `internal/adapters/stora
 
 ## Current Limitations
 
-- there is no agent creation/update/delete command exposed at the CLI yet; edit `./agents/*.yaml` instead
+- `crew init` only bootstraps a new local catalog; later agent creation and updates still happen by editing `./crew_agents/*.yaml`
 - free-mode orchestration is now configurable, but it still selects only one agent per step
 - provider-backed generation requires the selected agent to name a configured external provider and for that provider to have valid credentials
 - sandbox task commands exist, but sandboxed agent orchestration is still limited to the current persisted task/handoff flow rather than a richer autonomous tool-use loop

@@ -7,6 +7,11 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+const (
+	attachArtworkAlertLabel = "Ⓐ NOSTATE"
+	attachArtworkBrandLabel = "CREW CLI"
+)
+
 func renderFixedStyledLine(style lipgloss.Style, text string, width int) string {
 	if width < 1 {
 		width = 1
@@ -86,8 +91,8 @@ func renderArtworkBlock(width, height int, dots, alert, brand lipgloss.Style) st
 
 	alertRow := height / 2
 	brandRow := min(alertRow+2, height-1)
-	lines[alertRow] = renderDottedCenteredLine("NOSTATE", width, dots, alert)
-	lines[brandRow] = renderDottedCenteredLine("CREW CLI", width, dots, brand)
+	lines[alertRow] = renderDottedCenteredLine(attachArtworkAlertLabel, width, dots, alert)
+	lines[brandRow] = renderDottedCenteredLine(attachArtworkBrandLabel, width, dots, brand)
 	return strings.Join(lines, "\n")
 }
 
@@ -105,8 +110,8 @@ func renderPlainArtworkBlock(width, height int) string {
 
 	alertRow := height / 2
 	brandRow := min(alertRow+2, height-1)
-	lines[alertRow] = plainCenteredOverlay("NOSTATE", width)
-	lines[brandRow] = plainCenteredOverlay("CREW CLI", width)
+	lines[alertRow] = plainCenteredOverlay(attachArtworkAlertLabel, width)
+	lines[brandRow] = plainCenteredOverlay(attachArtworkBrandLabel, width)
 	return strings.Join(lines, "\n")
 }
 

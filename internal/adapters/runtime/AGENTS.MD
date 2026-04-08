@@ -33,7 +33,7 @@ This directory is the executable local engine for starting, controlling, observi
 - runtime sandbox task methods must use the same persisted coordination path as application sandbox-task services and must not bypass task identity or terminal-state recovery guarantees
 - sandbox runtime execution must preserve copied-workspace isolation; provider adapters must not mutate canonical source workspaces directly in this phase
 - free-mode mixed-provider delegation must persist sandbox task creation, handoff, and sandbox result messages into the same conversation stream so replay remains coherent
-- default agent definitions must come from the filesystem-backed `agents/` catalog, not hardcoded in-process seed lists
+- default agent definitions must come from the filesystem-backed `crew_agents/` catalog selected for the current workspace or explicit override, not hardcoded in-process seed lists
 - runtime must persist a session-scoped actor catalog selector from `session start --actors <selector>` and use that selector for later free-mode reseeding on that session, including direct-message dispatch validation as well as step/auto execution
 - optional agent-catalog presentation metadata such as per-agent colors may be loaded for UI consumers, but that metadata must stay outside canonical persisted business state
 - runtime startup must treat filesystem agent definitions as seed-or-update inputs for canonical persisted agent records
@@ -62,6 +62,6 @@ This directory is the executable local engine for starting, controlling, observi
 - deterministic local stub orchestrator and per-agent text-provider routing across local stub plus configured external providers, including direct Codex CLI turns
 - session-scoped actor-catalog reseeding for free-mode runtime operations and attached-room agent metadata
 - configured named sandbox-runtime assembly and routing for Codex-backed task execution, with room for additional CLI runtimes behind the same port
-- filesystem-backed agent catalog loading and startup seeding/update into canonical agent persistence
+- filesystem-backed agent catalog loading, local-first `crew_agents/` discovery, installed fallback resolution, and startup seeding/update into canonical agent persistence
 - provider topology reporting for plain-text versus sandboxed runtime classes
 - memory-backed runtime state snapshot export/import for tests and transitional tooling

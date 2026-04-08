@@ -14,13 +14,14 @@ It exposes the operational entrypoint for starting, attaching to, and controllin
 - compose dependencies here, do not implement business behavior here
 - validate startup configuration and fail fast on invalid runtime setup
 - keep command handlers focused on transport concerns such as flags, output formatting, and delegation into internal packages
-- current command surface includes `version`, `help`, `config show`, `agents list`, `agents validate`, `agents sync`, `session start`, `session pause`, `session resume`, `session stop`, `session inspect`, `session tail`, `session send`, `session step`, `session auto`, `session recall`, `task create`, `task run`, `task get`, `task list`, `vector status`, `vector rebuild`, and `tui attach`
+- current command surface includes `version`, `help`, `init`, `config show`, `agents list`, `agents validate`, `agents sync`, `session start`, `session pause`, `session resume`, `session stop`, `session inspect`, `session tail`, `session send`, `session step`, `session auto`, `session recall`, `task create`, `task run`, `task get`, `task list`, `vector status`, `vector rebuild`, and `tui attach`
 - bootstrap command failures must remain machine-readable JSON on stderr
 - leaf commands must reject unexpected positional arguments
 - local runtime persistence must be wired through configured adapters rather than embedded into command handlers
 - `storage.path` is the live backing store for session commands; `runtime.state_path` is deprecated compatibility config only
 - `config show` must surface both the resolved config payload and the exact config file path in use, and `config sync [source-config-path]` must let operators copy either an explicit YAML file or the active YAML file into the installed default wrapper config path without re-running the installer; README examples should prefer the positional form `crew config sync ./crew.yaml`
-- the active filesystem-backed agent catalog may come from `CREW_AGENTS_DIR` when an installed wrapper pins an operator-local catalog; otherwise commands may still discover `agents/` by walking upward from the current working directory
+- the active filesystem-backed agent catalog may come from `CREW_AGENTS_DIR`; otherwise commands must discover the nearest `crew_agents/` by walking upward from the current working directory and fall back to the installed home catalog only when no local catalog exists
+- `init` must create `./crew_agents` in the current working directory with `AGENTS.MD` plus the placeholder planner, reviewer, and writer agents, and it must fail instead of overwriting an existing local catalog
 - command handlers must treat text providers as a named config catalog under `providers.<name>` while provider choice itself stays on each agent definition
 - command handlers may resolve provider credentials from either `providers.<name>.api_key` or `providers.<name>.api_key_env`, and they may also pass through CLI-backed text-provider fields such as `binary` or `working_directory`, but they must not invent a process-global text-provider selection rule
 - sandbox task commands must stay thin wrappers over runtime/application coordination flows and must not invent a separate persistence or execution path
@@ -47,7 +48,7 @@ It exposes the operational entrypoint for starting, attaching to, and controllin
 - `tui attach` conversation scrolling must be owned by the viewport using width-aware wrapped content and the room pane's inner content dimensions only; the outer room border/padding chrome must be rendered outside the viewport so bottom pinning and visible line counts stay correct
 - `tui attach` should avoid rebuilding and re-bottom-pinning the room viewport on unchanged poll refreshes, because operators may be typing while the room is already anchored at the bottom and repeated no-op viewport resets create visible jitter
 - `tui attach` compact participant/status strip and preview pane must clip after wrapping rather than trimming raw newline counts
-- `tui attach` may reserve a right-side decorative pane beside the input row on sufficiently wide terminals, but that pane must remain purely presentational, disappear cleanly on narrower terminals, and must not steal width from the full-width conversation viewport or participant/status strip
+- `tui attach` may reserve a right-side decorative pane beside the input row on sufficiently wide terminals, but that pane must remain purely presentational, disappear cleanly on narrower terminals, and must not steal width from the full-width conversation viewport or participant/status strip; the current stock artwork uses a dotted field with red `Ⓐ NOSTATE` alert text and cream `CREW CLI` branding so operators can distinguish decoration from session content at a glance
 - `tui attach` should color agent participants from filesystem catalog metadata when available, allow explicit UI config overrides, and otherwise fall back to session-local generated colors instead of hardcoding specific agent IDs
 - `tui attach` should render operator messages immediately in the room and run free-mode step/auto work in background commands so the UI does not appear hung while agent replies are being generated
 - `tui attach` must keep the active room pane aligned with the conversation it is sending to, so freshly submitted operator messages and the resulting agent replies do not appear hidden in another conversation pane
@@ -66,7 +67,7 @@ It exposes the operational entrypoint for starting, attaching to, and controllin
 - `session step` and `session auto` may now surface persisted sandbox delegation results in their JSON payloads when a text agent delegates work to a sandbox runtime
 - `task create` must require an instruction and session scope, default the conversation to `conversation-1`, and use either the configured default sandbox runtime or an explicit `--runtime` override
 - `task run` must execute only persisted pending tasks through the configured sandbox runtime and must not bypass runtime/application coordination
-- the CLI runtime assembly must load default agents from the repository `agents/` directory rather than relying on hardcoded in-process agent definitions
+- the CLI runtime assembly must load default agents from the discovered `crew_agents/` catalog rather than relying on hardcoded in-process agent definitions
 - `agents list|validate|sync` must honor the root `--actors <selector>` flag as an invocation-scoped filesystem catalog selector
 - `session start --actors <selector>` must persist that selector onto the canonical session so later `session send`, `session step`, `session auto`, and `tui attach` use the same catalog without requiring the flag again
 - `agents list` and `agents validate` must read the filesystem-backed agent catalog directly and must not depend on live SQLite runtime state
