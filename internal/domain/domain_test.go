@@ -133,6 +133,72 @@ func TestNewAgentRejectsInvalidPriorityAndWeight(t *testing.T) {
 	}
 }
 
+func TestNewAgentRejectsDuplicateAllowedHandoffs(t *testing.T) {
+	_, err := NewAgent(Agent{
+		ID:           "planner",
+		Name:         "Planner",
+		Role:         "Breaks work into steps",
+		SystemPrompt: "Plan carefully",
+		Provider:     "local_stub",
+		Model:        "gpt-5.4",
+		Policies: AgentPolicy{
+			AllowedHandoffs:     []AgentID{"writer", "writer"},
+			MaxConsecutiveTurns: 2,
+			MaxToolCallsPerTurn: 0,
+			Weight:              1,
+		},
+	})
+	if err == nil {
+		t.Fatal("expected duplicate allowed handoffs to be rejected")
+	}
+}
+
+func TestNewAgentRejectsInvalidReasoningEffort(t *testing.T) {
+	_, err := NewAgent(Agent{
+		ID:              "planner",
+		Name:            "Planner",
+		Role:            "Breaks work into steps",
+		SystemPrompt:    "Plan carefully",
+		Provider:        "codex",
+		Model:           "gpt-5.4",
+		ReasoningEffort: "turbo",
+		Policies: AgentPolicy{
+			MaxConsecutiveTurns: 2,
+			MaxToolCallsPerTurn: 0,
+			Weight:              1,
+		},
+	})
+	if err == nil {
+		t.Fatal("expected invalid reasoning effort to be rejected")
+	}
+}
+
+func TestAgentAllowsHandoffTo(t *testing.T) {
+	agent, err := NewAgent(Agent{
+		ID:           "planner",
+		Name:         "Planner",
+		Role:         "Breaks work into steps",
+		SystemPrompt: "Plan carefully",
+		Provider:     "local_stub",
+		Model:        "gpt-5.4",
+		Policies: AgentPolicy{
+			AllowedHandoffs:     []AgentID{"writer", "reviewer"},
+			MaxConsecutiveTurns: 2,
+			MaxToolCallsPerTurn: 0,
+			Weight:              1,
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewAgent() error = %v", err)
+	}
+	if !agent.AllowsHandoffTo("writer") {
+		t.Fatal("expected writer handoff to be allowed")
+	}
+	if agent.AllowsHandoffTo("planner") {
+		t.Fatal("expected planner handoff to be disallowed")
+	}
+}
+
 func TestNewMessageRejectsDirectMessagesWithoutRecipients(t *testing.T) {
 	_, err := NewMessage(Message{
 		ID:             "msg-1",

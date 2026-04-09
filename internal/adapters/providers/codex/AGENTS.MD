@@ -31,6 +31,7 @@ Current operator prerequisites:
 - running direct `provider: codex` turns in read-only mode against a configured working directory
 - mapping application sandbox permission profiles to Codex sandbox flags
 - reading final response text from Codex output files
+- optionally consuming Codex JSONL progress events from stdout and stderr for transient TUI-only reasoning and non-final progress updates while still persisting only the final agent reply
 - packaging changed files and subprocess metadata into `SandboxTaskExecutionResult`
 - advertising support for the named text provider `codex` and the named sandbox runtime `codex` inside the routed runtime catalogs
 - honoring any per-task sandbox-root override so different agents may isolate or share Codex sandboxes intentionally
@@ -40,6 +41,7 @@ Current operator prerequisites:
 Update this file when:
 
 - Codex invocation flags or output capture strategy change
+- transient reasoning event extraction or UI-only reporting behavior changes
 - Codex CLI authentication or operator prerequisite expectations change
 - the direct-text versus sandbox-runtime split changes
 - permission-profile mapping changes

@@ -37,15 +37,10 @@ func NewText(cfg TextConfig) (*TextProvider, error) {
 		workingDirectory = "."
 	}
 
-	timeout := cfg.Timeout
-	if timeout <= 0 {
-		timeout = 30 * time.Second
-	}
-
 	return &TextProvider{
 		binaryPath:       binaryPath,
 		workingDirectory: workingDirectory,
-		timeout:          timeout,
+		timeout:          cfg.Timeout,
 	}, nil
 }
 
@@ -71,15 +66,26 @@ func (p *TextProvider) Generate(ctx context.Context, request application.Generat
 		"--sandbox", "read-only",
 		"--cd", p.workingDirectory,
 		"--model", strings.TrimSpace(request.Agent.Model),
+	}
+	progressSink := newJSONLReasoningSink(string(request.Agent.ID), reasoningReporterFromContext(ctx))
+	if progressSink != nil {
+		args = append(args, "--json")
+	}
+	if effort := strings.TrimSpace(request.Agent.ReasoningEffort); effort != "" {
+		args = append(args, "-c", fmt.Sprintf("model_reasoning_effort=%q", effort))
+	}
+	args = append(args,
 		"--output-last-message", outputPath,
 		textPrompt(request),
-	}
+	)
 
 	commandResult, execErr := sandbox.RunCommand(ctx, sandbox.CommandRequest{
 		BinaryPath: p.binaryPath,
 		Args:       args,
 		Dir:        p.workingDirectory,
 		Timeout:    p.timeout,
+		StdoutSink: progressSink,
+		StderrSink: progressSink,
 	})
 
 	lastMessage, readErr := os.ReadFile(outputPath)
@@ -100,10 +106,11 @@ func (p *TextProvider) Generate(ctx context.Context, request application.Generat
 
 	result := structuredgeneration.ParseResult(content)
 	result.Metadata = map[string]any{
-		"generated_by": "codex_llm",
-		"provider":     "codex",
-		"model":        strings.TrimSpace(request.Agent.Model),
-		"binary_path":  p.binaryPath,
+		"generated_by":     "codex_llm",
+		"provider":         "codex",
+		"model":            strings.TrimSpace(request.Agent.Model),
+		"reasoning_effort": strings.TrimSpace(request.Agent.ReasoningEffort),
+		"binary_path":      p.binaryPath,
 	}
 	return result, nil
 }

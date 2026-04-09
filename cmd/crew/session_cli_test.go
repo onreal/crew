@@ -211,7 +211,7 @@ func TestAgentsSyncPersistsUpdatedYAMLPrompt(t *testing.T) {
 		t.Fatalf("WriteFile(config) error = %v", err)
 	}
 
-	plannerYAML := strings.Replace(requirePlannerAgentBody(t, agentsDir), "Plan the next concrete step from the latest session message.", "initial planner prompt", 1)
+	plannerYAML := strings.Replace(requirePlannerAgentBody(t, agentsDir), "system_prompt: Respond to ordinary operator messages first, ask concise clarifying questions when the request is underspecified, and when the plan is clear hand implementation to @writer or request a targeted review from @reviewer. You never implement, you just coordinate the flow with other agents.", "system_prompt: initial planner prompt", 1)
 	mustWriteTestAgentFile(t, agentsDir, "planner.yaml", plannerYAML)
 
 	runCLIJSON(t, "--config", configPath, "agents", "sync")
@@ -267,7 +267,7 @@ func TestSessionStepUsesSelectedActorsCatalog(t *testing.T) {
 	if session["ActorCatalog"] != "team-a" {
 		t.Fatalf("expected persisted actor catalog team-a, got %#v", session["ActorCatalog"])
 	}
-	runCLIJSON(t, "--config", configPath, "session", "send", "--session-id", sessionID, "--body", "please reply")
+	runCLIJSON(t, "--config", configPath, "session", "send", "--session-id", sessionID, "--body", "@reviewer please reply")
 
 	stepPayload := runCLIJSON(t, "--config", configPath, "session", "step", "--session-id", sessionID)
 	step := stepPayload["step"].(map[string]any)
@@ -629,7 +629,7 @@ func TestSessionStartFreeAutoAttachesImmediately(t *testing.T) {
 
 	output := runCLITextInput(
 		t,
-		"please reply\n/quit\n",
+		"@reviewer please reply\n/quit\n",
 		"--config", configPath,
 		"--actors", "team-a",
 		"session", "start",
@@ -686,22 +686,8 @@ func TestTUIAttachAcceptsInteractiveInput(t *testing.T) {
 	if !strings.Contains(output, "Planner (planner): plan the next step") {
 		t.Fatalf("expected attach output to include planner reply, got %q", output)
 	}
-	agentReplies := 0
-	for _, marker := range []string{
-		"planner (reply_to=",
-		"reviewer (to=planner reply_to=",
-		"planner (to=reviewer reply_to=",
-	} {
-		agentReplies += strings.Count(output, marker)
-	}
-	if agentReplies < 3 {
-		t.Fatalf("expected plain text attach input to auto-run multiple agent turns, got %q", output)
-	}
-	if !strings.Contains(output, "reviewer (to=planner reply_to=") {
-		t.Fatalf("expected latest-speaker routing to direct reviewer toward planner, got %q", output)
-	}
-	if !strings.Contains(output, "planner (to=reviewer reply_to=") {
-		t.Fatalf("expected latest-speaker routing to direct planner back toward reviewer, got %q", output)
+	if strings.Count(output, "planner (reply_to=") != 1 {
+		t.Fatalf("expected exactly one planner reply from the default roster, got %q", output)
 	}
 }
 
@@ -749,7 +735,7 @@ func TestSessionStepSupportsMentionedFirstOrchestration(t *testing.T) {
 	startPayload := runCLIJSON(t, "--config", configPath, "session", "start", "--mode", "free")
 	sessionID := startPayload["session"].(map[string]any)["ID"].(string)
 
-	runCLIJSON(t, "--config", configPath, "session", "send", "--session-id", sessionID, "--body", "writer please draft the response")
+	runCLIJSON(t, "--config", configPath, "session", "send", "--session-id", sessionID, "--body", "@writer please draft the response")
 	stepPayload := runCLIJSON(t, "--config", configPath, "session", "step", "--session-id", sessionID, "--orchestration", "mentioned_first")
 	step := stepPayload["step"].(map[string]any)
 	agent := step["Agent"].(map[string]any)
@@ -901,26 +887,26 @@ func TestSessionAutoPersistsGeneratedRepliesAcrossInvocations(t *testing.T) {
 	runCLIJSON(t, "--config", configPath, "session", "send", "--session-id", sessionID, "--body", "plan the next steps")
 	autoPayload := runCLIJSON(t, "--config", configPath, "session", "auto", "--session-id", sessionID, "--max-steps", "2")
 	auto := autoPayload["auto"].(map[string]any)
-	if auto["CompletedSteps"] != float64(2) {
-		t.Fatalf("expected 2 completed steps, got %v", auto["CompletedSteps"])
+	if auto["CompletedSteps"] != float64(1) {
+		t.Fatalf("expected 1 completed step, got %v", auto["CompletedSteps"])
 	}
-	if auto["StopReason"] != "max_steps_reached" {
-		t.Fatalf("expected max_steps_reached, got %v", auto["StopReason"])
+	if auto["StopReason"] != "no_eligible_agents" {
+		t.Fatalf("expected no_eligible_agents, got %v", auto["StopReason"])
 	}
 	if auto["VectorStateMarkedStale"] != true {
 		t.Fatalf("expected vector state to be marked stale, got %v", auto["VectorStateMarkedStale"])
 	}
 
 	steps := auto["Steps"].([]any)
-	if len(steps) != 2 {
-		t.Fatalf("expected 2 step entries, got %d", len(steps))
+	if len(steps) != 1 {
+		t.Fatalf("expected 1 step entry, got %d", len(steps))
 	}
 
 	inspectPayload := runCLIJSON(t, "--config", configPath, "session", "inspect", "--session-id", sessionID)
 	snapshot := inspectPayload["snapshot"].(map[string]any)
 	messages := snapshot["Messages"].([]any)
-	if len(messages) != 3 {
-		t.Fatalf("expected 3 messages after auto run, got %d", len(messages))
+	if len(messages) != 2 {
+		t.Fatalf("expected 2 messages after auto run, got %d", len(messages))
 	}
 }
 

@@ -1,0 +1,23 @@
+id: reviewer
+name: Reviewer
+role: reviewer
+system_prompt: Only respond when explicitly targeted by the operator, planner, or writer. Review the latest implementation, report concrete risks or remaining defects, hand fixes back to @writer only when actual implementation work is required, and hand completion back to @planner only when review is genuinely complete. Any exact @agent mention is treated as a real handoff, so do not mention agent handles as suggestions or hypotheticals.
+provider: codex
+model: gpt-5.4
+reasoning_effort: medium
+color: "#38bdf8"
+tools: []
+policies:
+  can_initiate: false
+  require_direct_mention: true
+  allow_broadcast: true
+  allow_tool_calls: false
+  allow_sandbox_delegation: false
+  allowed_handoffs:
+    - writer
+    - planner
+  allowed_sandbox_runtimes: []
+  priority: 100
+  weight: 1
+  max_consecutive_turns: 1
+  max_tool_calls_per_turn: 0

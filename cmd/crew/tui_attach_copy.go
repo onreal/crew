@@ -77,7 +77,7 @@ func (m attachModel) renderPlainTUISnapshot() string {
 		m.lastRoomPlainContent,
 	}
 	if m.layoutPreviewWidth > 0 {
-		sections = append(sections, "Preview", m.renderPlainConversationPreviews())
+		sections = append(sections, "Reasoning", m.renderPlainReasoningPane())
 	}
 	if m.layoutArtworkWidth > 0 {
 		sections = append(sections, "Artwork", m.renderPlainArtworkPanel())
@@ -121,32 +121,12 @@ func (m attachModel) renderPlainInput() string {
 	return strings.Join([]string{value, m.renderInputAssistText()}, "\n")
 }
 
-func (m attachModel) renderPlainConversationPreviews() string {
-	if m.roomConversationScope() == "" {
-		return "Session timeline already includes all conversations."
+func (m attachModel) renderPlainReasoningPane() string {
+	title, body, ok := m.activeReasoningPane()
+	if !ok {
+		return "No active reasoning."
 	}
-	others := make([]domain.ConversationID, 0)
-	for _, id := range m.room.conversations {
-		if id != m.sendConversationID {
-			others = append(others, id)
-		}
-	}
-	if len(others) == 0 {
-		return "No secondary conversations."
-	}
-
-	sections := make([]string, 0, len(others))
-	for _, id := range others {
-		lines := m.previewConversationLines(id, 4)
-		section := string(id)
-		if len(lines) == 0 {
-			section += "\nNo messages"
-		} else {
-			section += "\n" + strings.Join(lines, "\n")
-		}
-		sections = append(sections, section)
-	}
-	return strings.Join(sections, "\n\n")
+	return title + "\n\n" + body
 }
 
 func (m attachModel) renderPlainSidebar() string {

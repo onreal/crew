@@ -94,13 +94,17 @@ In the current slice, sandboxed CLI runtimes are configured as a named catalog u
 
 In the current slice, agent YAML may define `delegation_runtime` and optional `sandbox_workspace_root`. That makes sandbox delegation an agent-owned behavior instead of a process-global default, while still preserving restart-safe task routing because persisted tasks carry the chosen runtime and any sandbox-root override.
 
-In the current slice, the default text-agent catalog is filesystem-backed under `crew_agents/`, so operators can change workspace agent behavior by editing those YAML files instead of patching hardcoded runtime seed lists. `crew init` seeds that local catalog with placeholder planner, reviewer, and writer agents, while the installed home catalog acts only as fallback when no local workspace catalog exists.
+In the current slice, the default text-agent catalog is filesystem-backed under `crew_agents/`, so operators can change workspace agent behavior by editing those YAML files instead of patching hardcoded runtime seed lists. `crew init` seeds that local catalog with planner, reviewer, and writer agents that default to `provider: codex`, `model: gpt-5.4`, and `reasoning_effort: medium`, while the installed home catalog acts only as fallback when no local workspace catalog exists.
 
-In the current slice, agent YAML now carries both `provider` and `model`, so operator edits can change not only prompting and policy but also which text provider handles a given agent turn without changing process-global config.
+In the current slice, agent YAML now carries `provider`, `model`, and optional `reasoning_effort`, so operator edits can change not only prompting and policy but also which text provider handles a given agent turn and, for providers like Codex, the intended reasoning depth, without changing process-global config.
 
 In the current slice, `provider: codex` is now supported as a direct text-provider path through the local Codex CLI. That means an operator can talk to the same Codex family that later executes delegated sandbox work, while the architecture still keeps direct reply generation separate from persisted sandbox-task execution.
 
 In the current slice, agent YAML policies may also bias deterministic free-mode turn order through `priority` and `weight`, so operators can shape which agents are considered first without modifying code.
+
+In the current slice, agent YAML may also define `allowed_handoffs`, `can_initiate`, and `require_direct_mention` to enforce a deliberate collaboration graph. The shipped planner/writer/reviewer roster uses planner as the front-door responder for ordinary operator messages, keeps planner focused on planning/orchestration instead of direct sandbox implementation, gives writer ownership of real implementation work and Codex sandbox delegation when file changes are required, and keeps reviewer dormant until explicitly mentioned or handed review work by an allowed peer.
+
+In the current slice, visible `@agent` handles are treated as real routing actions, not casual prose. Shipped prompts and the shared structured-generation contract must therefore avoid speculative or hypothetical agent mentions, and real handoffs should be emitted on a dedicated final line so incidental mid-paragraph prose does not wake another agent.
 
 In the current slice, free-mode reply routing is a separate operator control from orchestration. Orchestration still decides which eligible agent speaks next, while reply routing decides whether generated replies follow the latest conversational speaker or satisfy the oldest outstanding reply obligations first. This matters when one agent engages another before all earlier user-targeted replies have been satisfied.
 

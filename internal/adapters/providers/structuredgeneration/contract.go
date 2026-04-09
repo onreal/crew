@@ -21,6 +21,11 @@ func SystemInstruction(agent domain.Agent) string {
 	builder.WriteString(agent.Role)
 	builder.WriteString(").\n")
 	builder.WriteString(prompt)
+	builder.WriteString("\nTreat any `@agent` mention as a real handoff or routing action.")
+	builder.WriteString("\nUse `@agent` only when you are actively handing work to that agent in this reply.")
+	builder.WriteString("\nAny exact `@agent` token anywhere in the message body will be treated as a real mention.")
+	builder.WriteString("\nDo not mention `@agent` handles hypothetically, as examples, as options, or while asking the operator for more information.")
+	builder.WriteString("\nIf you still need operator input, ask the operator directly and do not hand off yet.")
 	builder.WriteString("\nReturn a JSON object with this exact shape:\n")
 	builder.WriteString(`{"message_body":"...", "sandbox_request":null}`)
 	if agent.Policies.AllowSandboxDelegation {

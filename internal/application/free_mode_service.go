@@ -603,6 +603,13 @@ func agentIneligibleReason(agent domain.Agent, history []domain.Message, lastMes
 		eligibilityMessage = directWindow.AnchorMessage
 	}
 
+	if eligibilityMessage.Sender.Type == domain.MessageSenderTypeUser &&
+		eligibilityMessage.Channel != domain.MessageChannelDirect &&
+		!agent.Policies.CanInitiate &&
+		!messageMentionsAgent(eligibilityMessage, agent.ID) {
+		return "initiation_not_allowed"
+	}
+
 	if agent.Policies.RequireDirectMention && !messageMentionsAgent(eligibilityMessage, agent.ID) {
 		return "mention_required"
 	}
@@ -677,8 +684,36 @@ func messageMentionsAgent(message domain.Message, agentID domain.AgentID) bool {
 	if containsAgentID(message.ToAgentIDs, agentID) {
 		return true
 	}
-	body := strings.ToLower(message.Body)
-	return strings.Contains(body, strings.ToLower(string(agentID)))
+	return bodyMentionsAgent(message.Body, agentID)
+}
+
+func messageHandsOffToAgent(message domain.Message, agentID domain.AgentID) bool {
+	if containsAgentID(message.ToAgentIDs, agentID) {
+		return true
+	}
+	return bodyMentionsAgent(message.Body, agentID)
+}
+
+func bodyMentionsAgent(body string, agentID domain.AgentID) bool {
+	body = strings.ToLower(body)
+	target := "@" + strings.ToLower(string(agentID))
+	start := 0
+	for {
+		idx := strings.Index(body[start:], target)
+		if idx < 0 {
+			return false
+		}
+		idx += start
+		end := idx + len(target)
+		if end == len(body) || !isAgentIdentifierChar(body[end]) {
+			return true
+		}
+		start = end
+	}
+}
+
+func isAgentIdentifierChar(ch byte) bool {
+	return (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '_' || ch == '-'
 }
 
 func containsAgentID(ids []domain.AgentID, target domain.AgentID) bool {

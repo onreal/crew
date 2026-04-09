@@ -121,15 +121,21 @@ func (s *MessageService) ListBySession(ctx context.Context, query ListSessionMes
 }
 
 func (s *MessageService) validateActors(ctx context.Context, sender domain.MessageSender, recipients []domain.AgentID) error {
+	var senderAgent domain.Agent
 	if sender.Type == domain.MessageSenderTypeAgent {
-		if _, err := s.agents.GetByID(ctx, domain.AgentID(sender.ID)); err != nil {
+		agent, err := s.agents.GetByID(ctx, domain.AgentID(sender.ID))
+		if err != nil {
 			return err
 		}
+		senderAgent = agent
 	}
 
 	for _, recipientID := range recipients {
 		if _, err := s.agents.GetByID(ctx, recipientID); err != nil {
 			return err
+		}
+		if sender.Type == domain.MessageSenderTypeAgent && !senderAgent.AllowsHandoffTo(recipientID) {
+			return fmt.Errorf("%w: agent %s is not allowed to hand off to %s", ErrPrecondition, sender.ID, recipientID)
 		}
 	}
 

@@ -38,6 +38,52 @@ shell_escape() {
 	printf '%s' "$1" | sed 's/[\\"]/\\&/g; s/\$/\\$/g; s/`/\\`/g'
 }
 
+reconcile_codex_text_timeout() {
+	config_path=$1
+	tmp_path=$TMP_DIR/crew-config.reconciled.yaml
+	perl -0pe '
+my $providers_codex = qr/(?:^providers:\n(?:^  .*\n)*?^  codex:\n(?:^    .*\n)*?)/m;
+if (/$providers_codex^    timeout_millis:\s*(\d+)/m) {
+	if ($1 eq "30000") {
+		s/($providers_codex^    timeout_millis:\s*)\d+/$1 . "0"/em;
+	}
+} elsif (/$providers_codex/m) {
+	s/($providers_codex)/$1 . "    timeout_millis: 0\n"/em;
+}
+' "$config_path" >"$tmp_path"
+	if ! cmp -s "$config_path" "$tmp_path"; then
+		mv "$tmp_path" "$config_path"
+		chmod 600 "$config_path"
+		printf 'reconciled codex text timeout in %s\n' "$config_path"
+		return
+	fi
+	rm -f "$tmp_path"
+	printf 'kept existing config at %s\n' "$config_path"
+}
+
+reconcile_codex_sandbox_timeout() {
+	config_path=$1
+	tmp_path=$TMP_DIR/crew-config.sandbox-reconciled.yaml
+	perl -0pe '
+my $sandbox_codex = qr/(?:^sandbox:\n(?:^  .*\n)*?^  providers:\n(?:^    .*\n)*?^    codex:\n(?:^      .*\n)*?)/m;
+if (/$sandbox_codex^      timeout_millis:\s*(\d+)/m) {
+	if ($1 eq "300000") {
+		s/($sandbox_codex^      timeout_millis:\s*)\d+/$1 . "0"/em;
+	}
+} elsif (/$sandbox_codex/m) {
+	s/($sandbox_codex)/$1 . "      timeout_millis: 0\n"/em;
+}
+' "$config_path" >"$tmp_path"
+	if ! cmp -s "$config_path" "$tmp_path"; then
+		mv "$tmp_path" "$config_path"
+		chmod 600 "$config_path"
+		printf 'reconciled codex sandbox timeout in %s\n' "$config_path"
+		return
+	fi
+	rm -f "$tmp_path"
+	printf 'kept existing config at %s\n' "$config_path"
+}
+
 install_dir_on_path() {
 	case ":$PATH:" in
 		*":$INSTALL_DIR:"*) return 0 ;;
@@ -239,7 +285,7 @@ providers:
   codex:
     binary: codex
     working_directory: .
-    timeout_millis: 30000
+    timeout_millis: 0
 
 sandbox:
   default_provider: disabled
@@ -250,7 +296,7 @@ sandbox:
       binary: codex
       model: ""
       workspace_root: "$CREW_SANDBOX_ROOT_YAML"
-      timeout_millis: 300000
+      timeout_millis: 0
       additional_write: []
 
 runtime:
@@ -258,7 +304,8 @@ runtime:
 EOF
 	printf 'wrote default config to %s\n' "$CREW_CONFIG_PATH"
 else
-	printf 'kept existing config at %s\n' "$CREW_CONFIG_PATH"
+	reconcile_codex_text_timeout "$CREW_CONFIG_PATH"
+	reconcile_codex_sandbox_timeout "$CREW_CONFIG_PATH"
 fi
 
 cat >"$TMP_DIR/$BIN_NAME.wrapper" <<EOF

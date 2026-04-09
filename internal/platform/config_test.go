@@ -49,6 +49,9 @@ func TestLoadConfigDefaultsWithoutFile(t *testing.T) {
 	if loaded.Config.Providers["codex"].WorkingDirectory != "." {
 		t.Fatalf("expected default codex working directory '.', got %#v", loaded.Config.Providers["codex"])
 	}
+	if loaded.Config.Providers["codex"].TimeoutMillis != 0 {
+		t.Fatalf("expected default codex timeout disabled, got %#v", loaded.Config.Providers["codex"])
+	}
 	if loaded.Config.Sandbox.DefaultProvider != "disabled" {
 		t.Fatalf("expected default sandbox provider disabled, got %q", loaded.Config.Sandbox.DefaultProvider)
 	}
@@ -57,6 +60,9 @@ func TestLoadConfigDefaultsWithoutFile(t *testing.T) {
 	}
 	if loaded.Config.Sandbox.Providers["codex"].Binary != "codex" {
 		t.Fatalf("expected default codex sandbox binary, got %#v", loaded.Config.Sandbox.Providers["codex"])
+	}
+	if loaded.Config.Sandbox.Providers["codex"].TimeoutMillis != 0 {
+		t.Fatalf("expected default codex sandbox timeout disabled, got %#v", loaded.Config.Sandbox.Providers["codex"])
 	}
 	if loaded.Config.Vector.Dimensions != 16 {
 		t.Fatalf("expected default vector dimensions 16, got %d", loaded.Config.Vector.Dimensions)
@@ -262,6 +268,47 @@ func TestConfigValidateRejectsProviderWithInvalidTimeout(t *testing.T) {
 
 	if err := cfg.Validate(); err == nil {
 		t.Fatal("expected Validate() to reject provider with invalid timeout")
+	}
+}
+
+func TestConfigValidateAllowsCodexProviderWithoutTimeout(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Providers["codex"] = TextProviderConfig{
+		Binary:           "codex",
+		WorkingDirectory: ".",
+		TimeoutMillis:    0,
+	}
+
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected Validate() to allow codex timeout 0, got %v", err)
+	}
+}
+
+func TestConfigValidateAllowsCodexSandboxProviderWithoutTimeout(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Sandbox.DefaultProvider = "codex"
+	cfg.Sandbox.Providers["codex"] = SandboxProviderConfig{
+		Binary:        "codex",
+		WorkspaceRoot: "./var/sandboxes",
+		TimeoutMillis: 0,
+	}
+
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected Validate() to allow codex sandbox timeout 0, got %v", err)
+	}
+}
+
+func TestConfigValidateRejectsNonCodexSandboxProviderWithoutTimeout(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Sandbox.DefaultProvider = "custom"
+	cfg.Sandbox.Providers["custom"] = SandboxProviderConfig{
+		Binary:        "custom-runtime",
+		WorkspaceRoot: "./var/sandboxes",
+		TimeoutMillis: 0,
+	}
+
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected Validate() to reject non-codex sandbox timeout 0")
 	}
 }
 

@@ -1,17 +1,21 @@
 id: reviewer
 name: Reviewer
 role: reviewer
-system_prompt: Review the latest session message and point out the main risk or improvement.
+system_prompt: Only respond when explicitly targeted by the operator, planner, or writer. Review the latest implementation, report concrete risks or remaining defects, and hand fixes back to @writer or completion back to @planner.
 provider: local_stub
 model: gpt-5.4
+reasoning_effort: medium
 color: "#38bdf8"
 tools: []
 policies:
   can_initiate: false
-  require_direct_mention: false
+  require_direct_mention: true
   allow_broadcast: true
   allow_tool_calls: false
   allow_sandbox_delegation: false
+  allowed_handoffs:
+    - writer
+    - planner
   allowed_sandbox_runtimes: []
   priority: 100
   weight: 1

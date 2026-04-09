@@ -112,6 +112,9 @@ func (m attachModel) streamEntryToDisplayEvent(
 		if conversationID != "" && event.Message.ConversationID != conversationID {
 			return attachDisplayEvent{}, false
 		}
+		if !shouldSurfaceRoomMessage(event.Message) {
+			return attachDisplayEvent{}, false
+		}
 		return attachDisplayEvent{
 			Kind:           "message",
 			RecordedAt:     entry.RecordedAt,
@@ -123,23 +126,25 @@ func (m attachModel) streamEntryToDisplayEvent(
 			ToAgentIDs:     append([]domain.AgentID(nil), event.Message.ToAgentIDs...),
 		}, true
 	case application.AgentTaskCreatedEvent:
-		if conversationID != "" && event.Task.ConversationID != conversationID {
-			return attachDisplayEvent{}, false
-		}
-		return attachDisplayEvent{Kind: "task", RecordedAt: entry.RecordedAt, ConversationID: event.Task.ConversationID, Body: formatTaskCreatedLine(event.Task, true)}, true
+		return attachDisplayEvent{}, false
 	case application.AgentTaskUpdatedEvent:
-		if conversationID != "" && event.Task.ConversationID != conversationID {
-			return attachDisplayEvent{}, false
-		}
-		return attachDisplayEvent{Kind: "task", RecordedAt: entry.RecordedAt, ConversationID: event.Task.ConversationID, Body: formatTaskUpdatedLine(event.Task, true)}, true
+		return attachDisplayEvent{}, false
 	case application.AgentHandoffCreatedEvent:
-		if conversationID != "" && event.Handoff.ConversationID != conversationID {
-			return attachDisplayEvent{}, false
-		}
-		return attachDisplayEvent{Kind: "task", RecordedAt: entry.RecordedAt, ConversationID: event.Handoff.ConversationID, Body: formatHandoffLine(event.Handoff, true)}, true
+		return attachDisplayEvent{}, false
 	default:
 		return attachDisplayEvent{Kind: "system", RecordedAt: entry.RecordedAt, Body: entry.Topic}, true
 	}
+}
+
+func shouldSurfaceRoomMessage(message domain.Message) bool {
+	if message.Sender.Type != domain.MessageSenderTypeSystem || message.Sender.ID != "sandbox" {
+		return true
+	}
+	if message.Kind == domain.MessageKindError {
+		return true
+	}
+	body := strings.TrimSpace(message.Body)
+	return strings.HasPrefix(body, "Sandbox task ")
 }
 
 func senderNameForMessage(message domain.Message) string {

@@ -145,7 +145,7 @@ func DefaultConfig() Config {
 			"codex": {
 				Binary:           "codex",
 				WorkingDirectory: ".",
-				TimeoutMillis:    30000,
+				TimeoutMillis:    0,
 			},
 		},
 		Sandbox: SandboxConfig{
@@ -158,7 +158,7 @@ func DefaultConfig() Config {
 					Binary:        "codex",
 					Model:         "",
 					WorkspaceRoot: "./var/sandboxes",
-					TimeoutMillis: 300000,
+					TimeoutMillis: 0,
 				},
 			},
 		},
@@ -293,7 +293,7 @@ func (c Config) Validate() error {
 		if strings.TrimSpace(name) == "" {
 			return errors.New("providers must not contain empty provider names")
 		}
-		if provider.TimeoutMillis < 1 {
+		if provider.TimeoutMillis < 0 || (provider.TimeoutMillis == 0 && name != "codex") {
 			return fmt.Errorf("providers.%s.timeout_millis must be >= 1, got %d", name, provider.TimeoutMillis)
 		}
 		if provider.APIKeyEnv != "" && strings.TrimSpace(provider.APIKeyEnv) == "" {
@@ -329,6 +329,9 @@ func (c Config) Validate() error {
 			return fmt.Errorf("sandbox.providers.%s.workspace_root must not be empty", name)
 		}
 		if provider.TimeoutMillis < 1 {
+			if name == "codex" && provider.TimeoutMillis == 0 {
+				continue
+			}
 			return fmt.Errorf("sandbox.providers.%s.timeout_millis must be >= 1, got %d", name, provider.TimeoutMillis)
 		}
 		for idx, path := range provider.AdditionalWrite {

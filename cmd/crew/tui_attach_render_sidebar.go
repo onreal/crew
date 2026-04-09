@@ -122,19 +122,46 @@ func distributeLabelWidths(labels []string, available int) []int {
 }
 
 func (m attachModel) renderPendingStatusLine() string {
-	if len(m.pendingAgentStates) == 0 {
-		return ""
-	}
 	parts := make([]string, 0, len(m.pendingAgentStates))
 	for _, agent := range m.agents {
 		if state, exists := m.pendingAgentStates[agent.ID]; exists {
 			parts = append(parts, fmt.Sprintf("%s %s", agent.ID, state))
 		}
 	}
+	if agentID, text, ok := m.primaryReasoning(); ok {
+		parts = append(parts, fmt.Sprintf("%s reasoning: %s", agentID, text))
+	}
 	if len(parts) == 0 {
 		return ""
 	}
-	return " activity: " + strings.Join(parts, "  |  ") + " "
+	return "activity: " + strings.Join(parts, "  |  ")
+}
+
+func (m attachModel) primaryReasoning() (domain.AgentID, string, bool) {
+	for _, agent := range m.agents {
+		if text := strings.TrimSpace(m.reasoningByAgent[agent.ID]); text != "" {
+			return agent.ID, truncatePlainText(text, 80), true
+		}
+	}
+	return "", "", false
+}
+
+func (m attachModel) primaryPendingAgent() (domain.AgentID, bool) {
+	for _, state := range []string{"reasoning", "thinking"} {
+		for _, agent := range m.agents {
+			if m.pendingAgentStates[agent.ID] == state {
+				return agent.ID, true
+			}
+		}
+	}
+	return "", false
+}
+
+func (m attachModel) activeReasoningPane() (string, string, bool) {
+	if agentID, text, ok := m.primaryReasoning(); ok {
+		return string(agentID) + " reasoning", text, true
+	}
+	return "", "", false
 }
 
 func summarizeMessageCounts(messages []domain.Message) (map[string]int, int) {

@@ -570,11 +570,11 @@ func TestSQLiteRuntimeAutoPersistsGeneratedReplies(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AutoSession() error = %v", err)
 	}
-	if auto.CompletedSteps != 2 {
-		t.Fatalf("expected 2 completed steps, got %d", auto.CompletedSteps)
+	if auto.CompletedSteps != 1 {
+		t.Fatalf("expected 1 completed step, got %d", auto.CompletedSteps)
 	}
-	if auto.StopReason != "max_steps_reached" {
-		t.Fatalf("expected max_steps_reached stop reason, got %q", auto.StopReason)
+	if auto.StopReason != "no_eligible_agents" {
+		t.Fatalf("expected no_eligible_agents stop reason, got %q", auto.StopReason)
 	}
 	if !auto.VectorStateMarkedStale {
 		t.Fatal("expected auto run to mark vector state stale")
@@ -584,8 +584,8 @@ func TestSQLiteRuntimeAutoPersistsGeneratedReplies(t *testing.T) {
 	if err != nil {
 		t.Fatalf("InspectSession() error = %v", err)
 	}
-	if len(snapshot.Messages) != 3 {
-		t.Fatalf("expected 3 persisted messages after auto run, got %d", len(snapshot.Messages))
+	if len(snapshot.Messages) != 2 {
+		t.Fatalf("expected 2 persisted messages after auto run, got %d", len(snapshot.Messages))
 	}
 }
 

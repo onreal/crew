@@ -10,11 +10,8 @@ import (
 
 func (m *attachModel) ensureActiveConversation() {
 	if m.options.ConversationID != "" {
-		m.selectedConvID = m.options.ConversationID
 		m.sendConversationID = m.options.ConversationID
-		return
-	}
-	if containsConversationID(m.room.conversations, m.selectedConvID) {
+		m.selectedConvID = m.sendConversationID
 		return
 	}
 	if containsConversationID(m.room.conversations, m.sendConversationID) {
@@ -22,8 +19,8 @@ func (m *attachModel) ensureActiveConversation() {
 		return
 	}
 	if len(m.room.conversations) > 0 {
-		m.selectedConvID = m.room.conversations[0]
-		m.sendConversationID = m.selectedConvID
+		m.sendConversationID = m.room.conversations[0]
+		m.selectedConvID = m.sendConversationID
 	}
 }
 
@@ -62,6 +59,7 @@ func (m *attachModel) setPendingSequence(maxSteps int) {
 
 func (m *attachModel) setPendingSequenceFromHistory(history []domain.Message, maxSteps int) {
 	clear(m.pendingAgentStates)
+	clear(m.reasoningByAgent)
 	sequence := estimatePendingSequence(history, m.agents, m.options.Orchestration, maxSteps)
 	for idx, agentID := range sequence {
 		if idx == 0 {
@@ -115,7 +113,7 @@ func estimatePendingSequence(messages []domain.Message, agents []domain.Agent, m
 }
 
 func (m attachModel) canSplitConversations() bool {
-	return m.roomConversationScope() != "" && len(m.room.conversations) > 1 && m.layoutMainWidth > 90
+	return false
 }
 
 func (m attachModel) activeConversation() domain.ConversationID {
@@ -129,9 +127,6 @@ func (m attachModel) activeConversation() domain.ConversationID {
 }
 
 func (m attachModel) roomConversationScope() domain.ConversationID {
-	if m.options.ConversationID != "" {
-		return m.options.ConversationID
-	}
 	return ""
 }
 

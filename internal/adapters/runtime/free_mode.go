@@ -158,8 +158,32 @@ func messageTargetsAgent(message domain.Message, agentID domain.AgentID) bool {
 			return true
 		}
 	}
-	body := strings.ToLower(message.Body)
-	return strings.Contains(body, strings.ToLower(string(agentID)))
+	if message.Sender.Type == domain.MessageSenderTypeAgent {
+		return bodyMentionsAgent(message.Body, agentID)
+	}
+	return bodyMentionsAgent(message.Body, agentID)
+}
+
+func bodyMentionsAgent(body string, agentID domain.AgentID) bool {
+	body = strings.ToLower(body)
+	target := "@" + strings.ToLower(string(agentID))
+	start := 0
+	for {
+		idx := strings.Index(body[start:], target)
+		if idx < 0 {
+			return false
+		}
+		idx += start
+		end := idx + len(target)
+		if end == len(body) || !isAgentIdentifierChar(body[end]) {
+			return true
+		}
+		start = end
+	}
+}
+
+func isAgentIdentifierChar(ch byte) bool {
+	return (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '_' || ch == '-'
 }
 
 func normalizeOrchestrationMode(mode application.OrchestrationMode) application.OrchestrationMode {
@@ -175,7 +199,14 @@ func (localStubLLMProvider) Generate(_ context.Context, request application.Gene
 	if len(request.Messages) == 0 {
 		return application.GenerationResult{}, fmt.Errorf("local stub generation requires at least one message")
 	}
+	if result, ok := workflowStubGeneration(request); ok {
+		return result, nil
+	}
 
+	return defaultStubGeneration(request), nil
+}
+
+func defaultStubGeneration(request application.GenerationRequest) application.GenerationResult {
 	last := request.Messages[len(request.Messages)-1]
 	body := strings.TrimSpace(last.Body)
 	if body == "" {
@@ -206,7 +237,7 @@ func (localStubLLMProvider) Generate(_ context.Context, request application.Gene
 		}
 	}
 
-	return result, nil
+	return result
 }
 
 func extractSandboxInstruction(body string) (string, bool) {
@@ -224,4 +255,153 @@ func extractSandboxInstruction(body string) (string, bool) {
 	}
 
 	return "", false
+}
+
+func workflowStubGeneration(request application.GenerationRequest) (application.GenerationResult, bool) {
+	if len(request.Agent.Policies.AllowedHandoffs) == 0 &&
+		!request.Agent.Policies.CanInitiate &&
+		!request.Agent.Policies.RequireDirectMention {
+		return application.GenerationResult{}, false
+	}
+	last := request.Messages[len(request.Messages)-1]
+	if request.Agent.Policies.AllowToolCalls && last.Sender.Type == domain.MessageSenderTypeUser {
+		if _, ok := extractSandboxInstruction(strings.TrimSpace(last.Body)); ok {
+			return application.GenerationResult{}, false
+		}
+	}
+	role := strings.ToLower(strings.TrimSpace(request.Agent.Role))
+	id := strings.ToLower(string(request.Agent.ID))
+	switch {
+	case role == "planner" || id == "planner":
+		body, ok := plannerStubMessage(request)
+		if !ok {
+			return application.GenerationResult{}, false
+		}
+		return application.GenerationResult{MessageBody: body}, true
+	case role == "writer" || id == "writer":
+		body, ok := writerStubMessage(request)
+		if !ok {
+			return application.GenerationResult{}, false
+		}
+		return application.GenerationResult{MessageBody: body}, true
+	case role == "reviewer" || id == "reviewer":
+		body, ok := reviewerStubMessage(request)
+		if !ok {
+			return application.GenerationResult{}, false
+		}
+		return application.GenerationResult{MessageBody: body}, true
+	default:
+		return application.GenerationResult{}, false
+	}
+}
+
+func plannerStubMessage(request application.GenerationRequest) (string, bool) {
+	last := request.Messages[len(request.Messages)-1]
+	lowerBody := strings.ToLower(strings.TrimSpace(last.Body))
+	switch last.Sender.Type {
+	case domain.MessageSenderTypeUser:
+		if strings.Contains(lowerBody, "wtf") {
+			return "I owe you a cleaner workflow. Tell me the product goal and I will route the next step correctly.", true
+		}
+		if shouldAskPlannerClarifyingQuestion(request.Messages, lowerBody) {
+			return "What website do you want me to plan?", true
+		}
+		if isWebsitePlanningConversation(request.Messages, lowerBody) {
+			return "I will create the website plan with structure, pages, booking flow, pricing, and contact details.\n@writer complete it.", true
+		}
+	case domain.MessageSenderTypeAgent:
+		if strings.EqualFold(last.Sender.ID, "reviewer") && messageTargetsAgent(last, request.Agent.ID) {
+			return "OK thank you.\n@writer please QA test based on this implementation.", true
+		}
+	}
+	return "", false
+}
+
+func writerStubMessage(request application.GenerationRequest) (string, bool) {
+	last := request.Messages[len(request.Messages)-1]
+	lowerBody := strings.ToLower(strings.TrimSpace(last.Body))
+	if last.Sender.Type == domain.MessageSenderTypeAgent {
+		switch {
+		case strings.EqualFold(last.Sender.ID, "planner") && messageTargetsAgent(last, request.Agent.ID):
+			if strings.Contains(lowerBody, "qa") {
+				return "I completed QA on the implementation and validated the booking, pricing, and contact flows.", true
+			}
+			return "I implemented the requested website flow, layout, and content structure. Task completed.\n@reviewer review the latest changes.", true
+		case strings.EqualFold(last.Sender.ID, "reviewer") && messageTargetsAgent(last, request.Agent.ID):
+			return "I checked the review, fixed the reported issues, and tightened the implementation.\n@reviewer please verify the latest changes.", true
+		}
+	}
+	return "", false
+}
+
+func reviewerStubMessage(request application.GenerationRequest) (string, bool) {
+	last := request.Messages[len(request.Messages)-1]
+	if last.Sender.Type == domain.MessageSenderTypeAgent {
+		if !messageTargetsAgent(last, request.Agent.ID) {
+			return "", false
+		}
+		if strings.EqualFold(last.Sender.ID, "writer") {
+			switch countAgentMessages(request.Messages, request.Agent.ID) {
+			case 0:
+				return "I reviewed the latest changes and found issues in copy clarity and form validation.\n@writer please fix them.", true
+			case 1:
+				return "I found minor issues only: tighten the empty-state text and button labels.\n@writer", true
+			default:
+				return "Planner, I completed the review and the implementation is in good shape.\n@planner", true
+			}
+		}
+		if strings.EqualFold(last.Sender.ID, "planner") {
+			return "I reviewed the latest changes and found issues in copy clarity and form validation.\n@writer please fix them.", true
+		}
+	}
+	return "", false
+}
+
+func shouldAskPlannerClarifyingQuestion(history []domain.Message, lowerBody string) bool {
+	if !isWebsitePlanningConversation(history, lowerBody) {
+		return false
+	}
+	if strings.Contains(lowerBody, "about ") ||
+		strings.Contains(lowerBody, "for ") ||
+		strings.Contains(lowerBody, "car wash") ||
+		strings.Contains(lowerBody, "car washing") {
+		return false
+	}
+	return countUserMessages(history) < 2
+}
+
+func isWebsitePlanningConversation(history []domain.Message, lowerBody string) bool {
+	if strings.Contains(lowerBody, "website") || strings.Contains(lowerBody, "web site") {
+		return true
+	}
+	for _, message := range history {
+		if message.Sender.Type != domain.MessageSenderTypeUser {
+			continue
+		}
+		body := strings.ToLower(strings.TrimSpace(message.Body))
+		if strings.Contains(body, "website") || strings.Contains(body, "web site") {
+			return true
+		}
+	}
+	return false
+}
+
+func countUserMessages(history []domain.Message) int {
+	count := 0
+	for _, message := range history {
+		if message.Sender.Type == domain.MessageSenderTypeUser {
+			count++
+		}
+	}
+	return count
+}
+
+func countAgentMessages(history []domain.Message, agentID domain.AgentID) int {
+	count := 0
+	for _, message := range history {
+		if message.Sender.Type == domain.MessageSenderTypeAgent && domain.AgentID(message.Sender.ID) == agentID {
+			count++
+		}
+	}
+	return count
 }

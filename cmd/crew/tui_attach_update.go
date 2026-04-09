@@ -40,10 +40,29 @@ func (m attachModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.syncViewportContent(true)
 		return m, nil
+	case attachStepStreamStartedMsg:
+		m.activeStepEvents = typed.events
+		m.layout()
+		m.syncViewportContent(false)
+		return m, attachAwaitStepEventCmd(typed.events)
+	case attachReasoningMsg:
+		if typed.agentID != "" && typed.text != "" {
+			m.pendingAgentStates[typed.agentID] = "reasoning"
+			m.reasoningByAgent[typed.agentID] = typed.text
+			m.status = string(typed.agentID) + " is reasoning"
+		}
+		m.layout()
+		m.syncViewportContent(false)
+		if m.activeStepEvents != nil {
+			return m, attachAwaitStepEventCmd(m.activeStepEvents)
+		}
+		return m, nil
 	case attachStepProgressMsg:
+		m.activeStepEvents = nil
 		m.room = typed.state
 		m.ensureActiveConversation()
 		m.lastError = ""
+		hadReasoning := len(m.reasoningByAgent) > 0
 		if typed.remaining > 1 && typed.step.Stepped {
 			m.pendingOps = 1
 			m.setPendingSequence(typed.remaining - 1)
@@ -57,18 +76,25 @@ func (m attachModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.pendingOps = 0
 		clear(m.pendingAgentStates)
+		clear(m.reasoningByAgent)
 		m.status = fmt.Sprintf("step=%t reason=%s", typed.step.Stepped, typed.step.Reason)
 		if typed.step.Agent != nil {
 			m.status = fmt.Sprintf("step agent=%s", typed.step.Agent.ID)
+			if !hadReasoning {
+				m.status += " (no reasoning emitted)"
+			}
 		}
 		if !typed.step.Stepped && typed.step.Reason != "" {
 			m.status = fmt.Sprintf("stopped: %s", typed.step.Reason)
 		}
+		m.layout()
 		m.syncViewportContent(true)
 		return m, nil
 	case attachErrMsg:
+		m.activeStepEvents = nil
 		m.pendingOps = 0
 		clear(m.pendingAgentStates)
+		clear(m.reasoningByAgent)
 		m.lastError = typed.err.Error()
 		m.appendLocalNotice(attachDisplayEvent{
 			Kind:           "system",
@@ -76,6 +102,7 @@ func (m attachModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			ConversationID: m.sendConversationID,
 			Body:           "room error: " + typed.err.Error(),
 		})
+		m.layout()
 		m.syncViewportContent(true)
 		return m, nil
 	case attachTickMsg:
@@ -160,16 +187,6 @@ func (m *attachModel) handleKeyMsg(msg tea.KeyMsg) (bool, tea.Cmd) {
 	case "tab":
 		if m.acceptSelectedInputAssist(true) {
 			return true, nil
-		}
-		if m.canSplitConversations() {
-			m.splitPanes = !m.splitPanes
-			m.layout()
-			m.syncViewportContent(true)
-			if m.splitPanes {
-				m.status = "split panes enabled"
-			} else {
-				m.status = "split panes disabled"
-			}
 		}
 		return true, nil
 	case "shift+tab":
@@ -262,7 +279,6 @@ func (m *attachModel) handleCommand(raw string) tea.Cmd {
 		m.status = interactiveHelpText(m.options.AutoSteps)
 		return nil
 	case "/step":
-		m.selectedConvID = m.sendConversationID
 		m.stickyBottom = true
 		m.pendingOps = 1
 		m.setPendingSequence(1)
@@ -280,7 +296,6 @@ func (m *attachModel) handleCommand(raw string) tea.Cmd {
 			}
 			maxSteps = value
 		}
-		m.selectedConvID = m.sendConversationID
 		m.stickyBottom = true
 		m.pendingOps = 1
 		m.setPendingSequence(maxSteps)

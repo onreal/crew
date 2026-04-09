@@ -40,10 +40,10 @@ func (m *attachModel) layout() {
 	m.layoutPreviewHeight = m.layoutRoomHeight
 	m.layoutRoomWidth, m.layoutPreviewWidth = m.layoutMainWidth, 0
 
-	if m.canSplitConversations() && m.splitPanes {
-		roomWidth := (m.layoutMainWidth * 2) / 3
-		previewWidth := m.layoutMainWidth - roomWidth - 1
-		if roomWidth >= 40 && previewWidth >= 20 {
+	if _, _, ok := m.activeReasoningPane(); ok {
+		previewWidth := max(m.layoutMainWidth/4, 28)
+		roomWidth := m.layoutMainWidth - previewWidth - 1
+		if roomWidth >= 56 {
 			m.layoutRoomWidth, m.layoutPreviewWidth = roomWidth, previewWidth
 		}
 	}
@@ -133,7 +133,7 @@ func (m attachModel) renderBody() string {
 	main := renderStaticPane(m.styles.room, m.layoutRoomWidth, m.layoutRoomHeight, m.viewport.View())
 	mainBlock := main
 	if m.layoutPreviewWidth > 0 {
-		preview := renderStaticPane(m.styles.preview, m.layoutPreviewWidth, m.layoutPreviewHeight, m.renderConversationPreviews())
+		preview := renderStaticPane(m.styles.preview, m.layoutPreviewWidth, m.layoutPreviewHeight, m.renderReasoningPane())
 		mainBlock = lipgloss.JoinHorizontal(lipgloss.Top, main, " ", preview)
 	}
 	if !m.showSidebar {
@@ -180,7 +180,19 @@ func (m *attachModel) syncViewportContent(forceBottom bool) {
 }
 
 func attachFooterHelpText() string {
-	return "Enter send/accept | / commands | @ mentions | Up/Down history or assist | PgUp/PgDn scroll | [/ ] conversation | Tab accept or panes | Ctrl+Y copy TUI | terminal mouse selection enabled | Ctrl+L refresh"
+	return "Enter send/accept | / commands | @ mentions | Up/Down history or assist | PgUp/PgDn scroll | [/ ] send target | Tab accept | Ctrl+Y copy TUI | terminal mouse selection enabled | Ctrl+L refresh"
+}
+
+func (m attachModel) renderReasoningPane() string {
+	title, body, ok := m.activeReasoningPane()
+	if !ok {
+		return m.styles.muted.Render("No active reasoning.")
+	}
+	lines := []string{m.styles.sectionTitle.Render(title)}
+	for _, line := range strings.Split(body, "\n") {
+		lines = append(lines, wrapRenderedText(m.styles.muted.Render(strings.TrimSpace(line)), max(m.layoutPreviewWidth-m.styles.preview.GetHorizontalFrameSize(), 1)))
+	}
+	return strings.Join(lines, "\n\n")
 }
 
 func (m attachModel) renderArtworkPanel(width, height int) string {

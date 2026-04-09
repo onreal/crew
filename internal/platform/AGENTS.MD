@@ -34,6 +34,7 @@ This directory improves consistency and operational quality across the system th
 - validate full-screen attach split-pane defaults without embedding multi-conversation room behavior in platform code
 - validate optional named text-provider configuration defaults without forcing one process-global text provider
 - expose per-provider connection settings such as base URL, timeout, temperature, API key indirection, binary path, and working directory through `providers.<name>` without teaching platform code provider business logic
+- allow `providers.codex.timeout_millis: 0` and `sandbox.providers.codex.timeout_millis: 0` as explicit "no timeout" settings while still requiring positive timeouts for the HTTP-backed providers and non-Codex sandbox runtimes
 - validate sandbox runtime configuration defaults while keeping sandbox execution disabled by default until adapters are wired
 - validate vector bootstrap defaults for local-stub embedding and optional vector activation
 - provide the configured SQLite storage path for the live CLI runtime

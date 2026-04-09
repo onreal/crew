@@ -13,6 +13,7 @@ This package preserves one canonical `crew` generation contract across different
 - keep this package transport-neutral; it must not know about HTTP payloads or CLI flags
 - preserve canonical agent identity, transcript context, and reply-routing hints in prompt shaping
 - preserve the structured `{"message_body":"...", "sandbox_request":...}` contract across providers
+- treat visible `@agent` handles as canonical routing semantics in the prompt contract: shared instructions must tell providers that mentioning an agent handle is a real handoff, not a hypothetical example, and that real handoffs belong on a dedicated final line
 - do not move provider registration, authentication, or subprocess execution here
 
 ## Current Responsibilities

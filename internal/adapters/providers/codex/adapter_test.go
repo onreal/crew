@@ -216,11 +216,13 @@ func TestTextProviderGenerateUsesCodexExec(t *testing.T) {
 	root := t.TempDir()
 	promptPath := filepath.Join(root, "captured-prompt.txt")
 	modelPath := filepath.Join(root, "captured-model.txt")
+	reasoningPath := filepath.Join(root, "captured-reasoning.txt")
 	sandboxModePath := filepath.Join(root, "captured-sandbox.txt")
 
 	binaryPath := writeFakeCodexScript(t, root, "#!/bin/sh\n"+
 		"OUTPUT=\"\"\n"+
 		"MODEL=\"\"\n"+
+		"REASONING=\"\"\n"+
 		"SANDBOX_MODE=\"\"\n"+
 		"LAST=\"\"\n"+
 		"while [ \"$#\" -gt 0 ]; do\n"+
@@ -231,6 +233,16 @@ func TestTextProviderGenerateUsesCodexExec(t *testing.T) {
 		"      ;;\n"+
 		"    --model)\n"+
 		"      MODEL=\"$2\"\n"+
+		"      shift 2\n"+
+		"      ;;\n"+
+		"    -c)\n"+
+		"      case \"$2\" in\n"+
+		"        model_reasoning_effort=*)\n"+
+		"          REASONING=\"${2#model_reasoning_effort=}\"\n"+
+		"          REASONING=\"${REASONING#\\\"}\"\n"+
+		"          REASONING=\"${REASONING%\\\"}\"\n"+
+		"          ;;\n"+
+		"      esac\n"+
 		"      shift 2\n"+
 		"      ;;\n"+
 		"    --sandbox)\n"+
@@ -244,6 +256,7 @@ func TestTextProviderGenerateUsesCodexExec(t *testing.T) {
 		"  esac\n"+
 		"done\n"+
 		"printf '%s' \"$MODEL\" > "+shellQuote(modelPath)+"\n"+
+		"printf '%s' \"$REASONING\" > "+shellQuote(reasoningPath)+"\n"+
 		"printf '%s' \"$SANDBOX_MODE\" > "+shellQuote(sandboxModePath)+"\n"+
 		"printf '%s' \"$LAST\" > "+shellQuote(promptPath)+"\n"+
 		"printf '{\"message_body\":\"Codex reply\",\"sandbox_request\":null}' > \"$OUTPUT\"\n")
@@ -285,6 +298,13 @@ func TestTextProviderGenerateUsesCodexExec(t *testing.T) {
 	}
 	if string(model) != agent.Model {
 		t.Fatalf("expected model %q, got %q", agent.Model, string(model))
+	}
+	reasoning, err := os.ReadFile(reasoningPath)
+	if err != nil {
+		t.Fatalf("ReadFile(reasoningPath) error = %v", err)
+	}
+	if string(reasoning) != agent.ReasoningEffort {
+		t.Fatalf("expected reasoning effort %q, got %q", agent.ReasoningEffort, string(reasoning))
 	}
 
 	sandboxMode, err := os.ReadFile(sandboxModePath)
@@ -360,6 +380,97 @@ func TestTextProviderGenerateParsesSandboxRequest(t *testing.T) {
 	}
 }
 
+func TestNewTextPreservesZeroTimeout(t *testing.T) {
+	t.Parallel()
+
+	provider, err := NewText(TextConfig{BinaryPath: "codex", WorkingDirectory: ".", Timeout: 0})
+	if err != nil {
+		t.Fatalf("NewText() error = %v", err)
+	}
+	if provider.timeout != 0 {
+		t.Fatalf("expected zero timeout to disable command timeout, got %s", provider.timeout)
+	}
+}
+
+func TestExtractProgressTextParsesReasoningEvent(t *testing.T) {
+	t.Parallel()
+
+	line := `{"type":"reasoning","summary":"Checking the workspace and planning the next reply"}`
+	if got := extractProgressText(line); got != "Checking the workspace and planning the next reply" {
+		t.Fatalf("unexpected reasoning text %q", got)
+	}
+}
+
+func TestExtractProgressTextFallsBackToProgressLabel(t *testing.T) {
+	t.Parallel()
+
+	line := `{"type":"thinking"}`
+	if got := extractProgressText(line); got != "thinking" {
+		t.Fatalf("unexpected progress text %q", got)
+	}
+}
+
+func TestExtractProgressTextIgnoresCompletedEvents(t *testing.T) {
+	t.Parallel()
+
+	line := `{"event":"completed","summary":"finalized"}`
+	if got := extractProgressText(line); got != "" {
+		t.Fatalf("expected completed event to be ignored, got %q", got)
+	}
+}
+
+func TestTextProviderGenerateStreamsReasoningFromStderr(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	binaryPath := writeFakeCodexScript(t, root, "#!/bin/sh\n"+
+		"OUTPUT=\"\"\n"+
+		"while [ \"$#\" -gt 0 ]; do\n"+
+		"  case \"$1\" in\n"+
+		"    --output-last-message)\n"+
+		"      OUTPUT=\"$2\"\n"+
+		"      shift 2\n"+
+		"      ;;\n"+
+		"    *)\n"+
+		"      shift\n"+
+		"      ;;\n"+
+		"  esac\n"+
+		"done\n"+
+		"printf '{\"type\":\"reasoning\",\"summary\":\"Checking the workspace\"}\\n' >&2\n"+
+		"printf '{\"message_body\":\"Codex reply\",\"sandbox_request\":null}' > \"$OUTPUT\"\n")
+
+	provider, err := NewText(TextConfig{
+		BinaryPath:       binaryPath,
+		WorkingDirectory: root,
+		Timeout:          5 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("NewText() error = %v", err)
+	}
+
+	agent, err := applicationTestAgent("codex")
+	if err != nil {
+		t.Fatalf("applicationTestAgent() error = %v", err)
+	}
+
+	var events []ReasoningEvent
+	ctx := WithReasoningReporter(context.Background(), func(event ReasoningEvent) {
+		events = append(events, event)
+	})
+	if _, err := provider.Generate(ctx, application.GenerationRequest{
+		Agent: agent,
+		Messages: []domain.Message{
+			mustMessage("message-1", "review the runtime recovery path"),
+		},
+	}); err != nil {
+		t.Fatalf("Generate() error = %v", err)
+	}
+
+	if len(events) != 1 || events[0].Text != "Checking the workspace" {
+		t.Fatalf("expected reasoning event from stderr, got %+v", events)
+	}
+}
+
 func writeFakeCodexScript(t *testing.T, dir, content string) string {
 	t.Helper()
 
@@ -376,12 +487,13 @@ func shellQuote(value string) string {
 
 func applicationTestAgent(provider string) (domain.Agent, error) {
 	return domain.NewAgent(domain.Agent{
-		ID:           "planner",
-		Name:         "Planner",
-		Role:         "planner",
-		SystemPrompt: "Plan the next step.",
-		Provider:     provider,
-		Model:        "codex-mini",
+		ID:              "planner",
+		Name:            "Planner",
+		Role:            "planner",
+		SystemPrompt:    "Plan the next step.",
+		Provider:        provider,
+		Model:           "gpt-5.4",
+		ReasoningEffort: "medium",
 	})
 }
 
@@ -392,7 +504,8 @@ func applicationSandboxAgent(provider string) (domain.Agent, error) {
 		Role:              "planner",
 		SystemPrompt:      "Plan the next step.",
 		Provider:          provider,
-		Model:             "codex-mini",
+		Model:             "gpt-5.4",
+		ReasoningEffort:   "medium",
 		DelegationRuntime: "codex",
 		Policies: domain.AgentPolicy{
 			AllowBroadcast:         true,

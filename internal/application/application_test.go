@@ -145,6 +145,79 @@ func TestMessageServiceDispatchPersistsAndPublishes(t *testing.T) {
 	}
 }
 
+func TestMessageServiceDispatchRejectsAgentHandoffOutsideAllowedSet(t *testing.T) {
+	repos := newFixture()
+	writer, err := domain.NewAgent(domain.Agent{
+		ID:           "writer",
+		Name:         "writer",
+		Role:         "writer",
+		SystemPrompt: "help",
+		Provider:     "local_stub",
+		Model:        "gpt-5.4",
+		Policies: domain.AgentPolicy{
+			RequireDirectMention: true,
+			AllowBroadcast:       true,
+			AllowedHandoffs:      []domain.AgentID{"reviewer"},
+			Weight:               1,
+			MaxConsecutiveTurns:  1,
+			MaxToolCallsPerTurn:  0,
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewAgent(writer) error = %v", err)
+	}
+	planner, err := domain.NewAgent(domain.Agent{
+		ID:           "planner",
+		Name:         "planner",
+		Role:         "planner",
+		SystemPrompt: "help",
+		Provider:     "local_stub",
+		Model:        "gpt-5.4",
+		Policies: domain.AgentPolicy{
+			CanInitiate:         true,
+			AllowBroadcast:      true,
+			AllowedHandoffs:     []domain.AgentID{"writer", "reviewer"},
+			Weight:              1,
+			MaxConsecutiveTurns: 1,
+			MaxToolCallsPerTurn: 0,
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewAgent(planner) error = %v", err)
+	}
+	repos.agents.agents["writer"] = writer
+	repos.agents.agents["planner"] = planner
+
+	sessionService := NewSessionService(repos.sessions, repos.outbox, repos.tx, repos.clock, repos.ids)
+	messageService := NewMessageService(repos.sessions, repos.messages, repos.agents, repos.vector, repos.outbox, repos.tx, repos.clock, repos.ids)
+	session, err := sessionService.Create(context.Background(), CreateSessionCommand{Mode: domain.SessionModeFree})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	if _, err := sessionService.Start(context.Background(), SessionIDCommand{SessionID: session.ID}); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+
+	directPolicy := domain.DefaultConversationPolicy()
+	directPolicy.RequireReplyTargetForDirect = false
+	_, err = messageService.Dispatch(context.Background(), DispatchMessageCommand{
+		SessionID:      session.ID,
+		ConversationID: "conversation-1",
+		Sender:         domain.AgentSender("writer"),
+		ToAgentIDs:     []domain.AgentID{"planner"},
+		Channel:        domain.MessageChannelDirect,
+		Kind:           domain.MessageKindUtterance,
+		Body:           "@planner please review this",
+		Policy:         &directPolicy,
+	})
+	if err == nil {
+		t.Fatal("expected disallowed handoff to be rejected")
+	}
+	if !errors.Is(err, ErrPrecondition) {
+		t.Fatalf("expected ErrPrecondition, got %v", err)
+	}
+}
+
 func TestMessageServiceDispatchRollsBackWhenOutboxFails(t *testing.T) {
 	repos := newFixture()
 	repos.outbox.failAdd = true
@@ -381,14 +454,14 @@ func TestFreeModeServiceStepDispatchesAgentReply(t *testing.T) {
 	if result.OrchestrationMode != OrchestrationModeDeterministic {
 		t.Fatalf("expected deterministic orchestration mode, got %q", result.OrchestrationMode)
 	}
-	if !slices.Equal(result.EligibleAgentIDs, []domain.AgentID{"planner", "reviewer", "writer"}) {
+	if !slices.Equal(result.EligibleAgentIDs, []domain.AgentID{"planner"}) {
 		t.Fatalf("unexpected eligible agent ids %v", result.EligibleAgentIDs)
 	}
-	if !slices.Equal(result.OrderedCandidateIDs, []domain.AgentID{"planner", "reviewer", "writer"}) {
+	if !slices.Equal(result.OrderedCandidateIDs, []domain.AgentID{"planner"}) {
 		t.Fatalf("unexpected ordered candidate ids %v", result.OrderedCandidateIDs)
 	}
-	if len(result.BlockedAgents) != 0 {
-		t.Fatalf("expected no blocked agents, got %+v", result.BlockedAgents)
+	if len(result.BlockedAgents) != 2 {
+		t.Fatalf("expected non-initiating specialists to be blocked, got %+v", result.BlockedAgents)
 	}
 	if result.Message == nil || result.Message.Sender.ID != "planner" {
 		t.Fatalf("expected planner message, got %+v", result.Message)
@@ -568,6 +641,65 @@ func TestFreeModeServiceReplyObligationsPrioritizeOlderUserTargetBeforeAgentHand
 	}
 	if third.Message.ReplyTo != first.Message.ID {
 		t.Fatalf("expected reviewer handoff reply to thread to planner handoff %q, got %+v", first.Message.ID, third.Message)
+	}
+}
+
+func TestFreeModeServiceTreatsAgentMentionsAsRealHandoffs(t *testing.T) {
+	repos := newFixture()
+	sessionService := NewSessionService(repos.sessions, repos.outbox, repos.tx, repos.clock, repos.ids)
+	messageService := NewMessageService(repos.sessions, repos.messages, repos.agents, repos.vector, repos.outbox, repos.tx, repos.clock, repos.ids)
+	freeModeService := NewFreeModeService(repos.sessions, repos.messages, repos.agents, fakeOrchestrator{}, incidentalMentionLLMProvider{}, messageService)
+
+	session, err := sessionService.Create(context.Background(), CreateSessionCommand{Mode: domain.SessionModeFree})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	if _, err := sessionService.Start(context.Background(), SessionIDCommand{SessionID: session.ID}); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	if _, err := messageService.Dispatch(context.Background(), DispatchMessageCommand{
+		SessionID:      session.ID,
+		ConversationID: "conversation-1",
+		Sender:         domain.UserSender("operator"),
+		Channel:        domain.MessageChannelUser,
+		Kind:           domain.MessageKindUtterance,
+		Body:           "please plan the work",
+	}); err != nil {
+		t.Fatalf("Dispatch() error = %v", err)
+	}
+
+	first, err := freeModeService.Step(context.Background(), StepSessionCommand{SessionID: session.ID})
+	if err != nil {
+		t.Fatalf("first Step() error = %v", err)
+	}
+	if !first.Stepped || first.Agent == nil || first.Agent.ID != "planner" {
+		t.Fatalf("expected planner first step, got %+v", first)
+	}
+
+	second, err := freeModeService.Step(context.Background(), StepSessionCommand{SessionID: session.ID})
+	if err != nil {
+		t.Fatalf("second Step() error = %v", err)
+	}
+	if !second.Stepped {
+		t.Fatalf("expected ordinary free-mode continuation, got %+v", second)
+	}
+	if second.Agent == nil || second.Agent.ID != "reviewer" {
+		t.Fatalf("expected explicit @reviewer mention to target reviewer, got %+v", second)
+	}
+	if !slices.Equal(second.EligibleAgentIDs, []domain.AgentID{"reviewer"}) {
+		t.Fatalf("expected explicit @reviewer mention to create reviewer-only eligibility, got %+v", second)
+	}
+}
+
+func TestBodyMentionsAgentRequiresExactHandleToken(t *testing.T) {
+	if !bodyMentionsAgent("Implementation is blocked in read-only mode. @planner", "planner") {
+		t.Fatal("expected exact handle mention to count")
+	}
+	if !bodyMentionsAgent("If needed I can ask @planner later.", "planner") {
+		t.Fatal("expected inline exact handle mention to count")
+	}
+	if bodyMentionsAgent("@plannering should not match planner", "planner") {
+		t.Fatal("expected longer handle prefix not to count")
 	}
 }
 
@@ -2010,7 +2142,7 @@ func (obligationAwareLLMProvider) Generate(_ context.Context, request Generation
 	switch request.Agent.ID {
 	case "planner":
 		return GenerationResult{
-			MessageBody: "planner reply to operator and mentions @reviewer",
+			MessageBody: "planner reply to operator\n@reviewer",
 		}, nil
 	case "reviewer":
 		if request.ReplyRouting.RecipientType == "agent" {
@@ -2026,6 +2158,14 @@ func (obligationAwareLLMProvider) Generate(_ context.Context, request Generation
 			MessageBody: request.Agent.Name + " reply",
 		}, nil
 	}
+}
+
+type incidentalMentionLLMProvider struct{}
+
+func (incidentalMentionLLMProvider) Generate(_ context.Context, request GenerationRequest) (GenerationResult, error) {
+	return GenerationResult{
+		MessageBody: "I may hand this to @reviewer later, but I still need more operator input before doing that.",
+	}, nil
 }
 
 type sandboxDelegatingLLMProvider struct{}
@@ -2083,8 +2223,10 @@ func (g *fakeIDGenerator) NewMessageID(_ context.Context) (domain.MessageID, err
 func mustAgent(id domain.AgentID) domain.Agent {
 	policy := domain.DefaultAgentPolicy()
 	if id == "planner" {
+		policy.CanInitiate = true
 		policy.AllowToolCalls = true
 		policy.AllowSandboxDelegation = true
+		policy.AllowedHandoffs = []domain.AgentID{"writer", "reviewer"}
 		policy.AllowedSandboxRuntimes = []string{"codex"}
 		policy.MaxToolCallsPerTurn = 1
 	}

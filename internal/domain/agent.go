@@ -13,6 +13,7 @@ type Agent struct {
 	SystemPrompt         string
 	Provider             string
 	Model                string
+	ReasoningEffort      string
 	DelegationRuntime    string
 	SandboxWorkspaceRoot string
 	Tools                []string
@@ -25,6 +26,7 @@ type AgentPolicy struct {
 	AllowBroadcast         bool
 	AllowToolCalls         bool
 	AllowSandboxDelegation bool
+	AllowedHandoffs        []AgentID
 	AllowedSandboxRuntimes []string
 	Priority               int
 	Weight                 int
@@ -55,6 +57,7 @@ func NewAgent(agent Agent) (Agent, error) {
 	}
 	agent.DelegationRuntime = strings.TrimSpace(agent.DelegationRuntime)
 	agent.SandboxWorkspaceRoot = strings.TrimSpace(agent.SandboxWorkspaceRoot)
+	agent.ReasoningEffort = normalizeReasoningEffort(agent.ReasoningEffort)
 	if agent.DelegationRuntime == "" && agent.Policies.AllowSandboxDelegation && len(agent.Policies.AllowedSandboxRuntimes) == 1 {
 		agent.DelegationRuntime = strings.TrimSpace(agent.Policies.AllowedSandboxRuntimes[0])
 	}
@@ -73,6 +76,7 @@ func isZeroAgentPolicy(policy AgentPolicy) bool {
 		!policy.AllowBroadcast &&
 		!policy.AllowToolCalls &&
 		!policy.AllowSandboxDelegation &&
+		len(policy.AllowedHandoffs) == 0 &&
 		len(policy.AllowedSandboxRuntimes) == 0 &&
 		policy.Priority == 0 &&
 		policy.Weight == 0 &&
@@ -104,6 +108,9 @@ func (a Agent) Validate() error {
 	if strings.TrimSpace(a.Model) == "" {
 		return fmt.Errorf("agent model must not be empty")
 	}
+	if a.ReasoningEffort != "" && !isSupportedReasoningEffort(a.ReasoningEffort) {
+		return fmt.Errorf("agent reasoning effort must be one of low, medium, high, xhigh when set, got %q", a.ReasoningEffort)
+	}
 	if !a.Policies.AllowSandboxDelegation {
 		if a.DelegationRuntime != "" {
 			return fmt.Errorf("agent delegation runtime must be empty when sandbox delegation is disabled")
@@ -122,6 +129,11 @@ func (a Agent) Validate() error {
 
 	if err := a.Policies.Validate(); err != nil {
 		return err
+	}
+	for _, recipient := range a.Policies.AllowedHandoffs {
+		if recipient == a.ID {
+			return fmt.Errorf("agent allowed handoffs must not include self %q", a.ID)
+		}
 	}
 
 	seen := make(map[string]struct{}, len(a.Tools))
@@ -167,6 +179,16 @@ func (p AgentPolicy) Validate() error {
 	if !p.AllowSandboxDelegation && len(p.AllowedSandboxRuntimes) > 0 {
 		return fmt.Errorf("allowed sandbox runtimes must be empty when sandbox delegation is disabled")
 	}
+	seenHandoffs := make(map[AgentID]struct{}, len(p.AllowedHandoffs))
+	for _, recipient := range p.AllowedHandoffs {
+		if err := recipient.Validate(); err != nil {
+			return fmt.Errorf("allowed handoffs contains invalid agent id %q: %w", recipient, err)
+		}
+		if _, exists := seenHandoffs[recipient]; exists {
+			return fmt.Errorf("allowed handoffs must be unique, duplicate %q", recipient)
+		}
+		seenHandoffs[recipient] = struct{}{}
+	}
 	seen := make(map[string]struct{}, len(p.AllowedSandboxRuntimes))
 	for _, runtime := range p.AllowedSandboxRuntimes {
 		name := strings.TrimSpace(runtime)
@@ -182,6 +204,21 @@ func (p AgentPolicy) Validate() error {
 	return nil
 }
 
+func (a Agent) AllowsHandoffTo(target AgentID) bool {
+	if err := target.Validate(); err != nil {
+		return false
+	}
+	if len(a.Policies.AllowedHandoffs) == 0 {
+		return true
+	}
+	for _, allowed := range a.Policies.AllowedHandoffs {
+		if allowed == target {
+			return true
+		}
+	}
+	return false
+}
+
 func allowsSandboxRuntime(allowed []string, runtime string) bool {
 	runtime = strings.TrimSpace(runtime)
 	if runtime == "" {
@@ -194,4 +231,17 @@ func allowsSandboxRuntime(allowed []string, runtime string) bool {
 		}
 	}
 	return false
+}
+
+func normalizeReasoningEffort(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
+}
+
+func isSupportedReasoningEffort(value string) bool {
+	switch normalizeReasoningEffort(value) {
+	case "low", "medium", "high", "xhigh":
+		return true
+	default:
+		return false
+	}
 }

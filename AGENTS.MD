@@ -159,7 +159,7 @@ Before implementing a new feature, agents must ensure the following are clear in
 ## Root Documentation
 
 - `README.md` is the operator-facing entrypoint for building, running, configuring, and exercising the current CLI/runtime surface
-- `install.sh` is the operator-facing local installer for building `crew`, installing the PATH-facing wrapper, seeding or refreshing the operator-local fallback `crew_agents` catalog, creating the default home config and runtime directories, and updating a supported shell profile for PATH bootstrap without silently overwriting existing operator config edits
+- `install.sh` is the operator-facing local installer for building `crew`, installing the PATH-facing wrapper, seeding or refreshing the operator-local fallback `crew_agents` catalog, creating the default home config and runtime directories, reconciling shipped config defaults that must not stay stale forever such as `providers.codex.timeout_millis` and `sandbox.providers.codex.timeout_millis`, and updating a supported shell profile for PATH bootstrap without silently overwriting unrelated operator config edits
 - `crew_agents/` is the default workspace-local agent catalog for repository and operator-owned workspaces; when discovery, initialization, or actor-subcatalog semantics change, update `README.md`, `cmd/crew/AGENTS.MD`, `internal/adapters/runtime/AGENTS.MD`, and relevant business docs in the same change
 - when command ergonomics change, `README.md` examples must be updated to show the preferred operator-facing syntax directly rather than only a fallback or implementation-detail form
 - when command behavior, setup flow, persisted runtime behavior, or limitations change, update `README.md` in the same change

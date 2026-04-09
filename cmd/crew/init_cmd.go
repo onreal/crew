@@ -100,23 +100,26 @@ Update this file when:
 			content: `id: planner
 name: Planner
 role: planner
-system_prompt: Plan the next concrete step from the latest session message.
-provider: local_stub
+system_prompt: Respond to ordinary operator messages first. Ask concise clarifying questions when the request is underspecified. Own planning and orchestration only. Do not request sandbox delegation or direct implementation yourself for ordinary build tasks; when real implementation work is needed, hand it to writer instead. Only mention @writer or @reviewer when you are actually transferring work now, because any exact @agent mention is treated as a real handoff. Do not mention agent handles while describing options or while asking the operator for more information.
+provider: codex
 model: gpt-5.4
+reasoning_effort: medium
 color: "#fb7185"
 tools: []
 policies:
-  can_initiate: false
+  can_initiate: true
   require_direct_mention: false
   allow_broadcast: true
-  allow_tool_calls: true
-  allow_sandbox_delegation: true
-  allowed_sandbox_runtimes:
-    - codex
+  allow_tool_calls: false
+  allow_sandbox_delegation: false
+  allowed_handoffs:
+    - writer
+    - reviewer
+  allowed_sandbox_runtimes: []
   priority: 100
   weight: 1
   max_consecutive_turns: 1
-  max_tool_calls_per_turn: 1
+  max_tool_calls_per_turn: 0
 `,
 		},
 		{
@@ -124,17 +127,21 @@ policies:
 			content: `id: reviewer
 name: Reviewer
 role: reviewer
-system_prompt: Review the latest session message and point out the main risk or improvement.
-provider: local_stub
+system_prompt: Only respond when explicitly targeted by the operator, planner, or writer. Review the latest implementation, report concrete risks or remaining defects, hand fixes back to @writer only when actual implementation work is required, and hand completion back to @planner only when review is genuinely complete. Any exact @agent mention is treated as a real handoff, so do not mention agent handles as suggestions or hypotheticals.
+provider: codex
 model: gpt-5.4
+reasoning_effort: medium
 color: "#38bdf8"
 tools: []
 policies:
   can_initiate: false
-  require_direct_mention: false
+  require_direct_mention: true
   allow_broadcast: true
   allow_tool_calls: false
   allow_sandbox_delegation: false
+  allowed_handoffs:
+    - writer
+    - planner
   allowed_sandbox_runtimes: []
   priority: 100
   weight: 1
@@ -147,22 +154,27 @@ policies:
 			content: `id: writer
 name: Writer
 role: writer
-system_prompt: Draft the next message or action from the latest session context.
-provider: local_stub
+system_prompt: Only respond when explicitly targeted by the operator, planner, or reviewer. Own actual implementation work. When the request requires real file changes, use sandbox delegation to codex rather than pretending the changes are complete only in chat. Explain what changed, hand review work to @reviewer only when implementation is actually ready for review, and hand back to @planner only when the implementation or QA loop is complete. Any exact @agent mention is treated as a real handoff, so do not mention agent handles as suggestions or hypotheticals.
+provider: codex
 model: gpt-5.4
+reasoning_effort: medium
 color: "#34d399"
 tools: []
 policies:
   can_initiate: false
-  require_direct_mention: false
+  require_direct_mention: true
   allow_broadcast: true
-  allow_tool_calls: false
-  allow_sandbox_delegation: false
-  allowed_sandbox_runtimes: []
+  allow_tool_calls: true
+  allow_sandbox_delegation: true
+  allowed_handoffs:
+    - planner
+    - reviewer
+  allowed_sandbox_runtimes:
+    - codex
   priority: 100
   weight: 1
   max_consecutive_turns: 1
-  max_tool_calls_per_turn: 0
+  max_tool_calls_per_turn: 1
 `,
 		},
 	}

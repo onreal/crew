@@ -19,6 +19,7 @@ type agentFile struct {
 	SystemPrompt         string          `yaml:"system_prompt"`
 	Provider             string          `yaml:"provider"`
 	Model                string          `yaml:"model"`
+	ReasoningEffort      string          `yaml:"reasoning_effort"`
 	DelegationRuntime    string          `yaml:"delegation_runtime"`
 	SandboxWorkspaceRoot string          `yaml:"sandbox_workspace_root"`
 	Color                string          `yaml:"color"`
@@ -32,6 +33,7 @@ type agentFilePolicy struct {
 	AllowBroadcast         bool     `yaml:"allow_broadcast"`
 	AllowToolCalls         bool     `yaml:"allow_tool_calls"`
 	AllowSandboxDelegation bool     `yaml:"allow_sandbox_delegation"`
+	AllowedHandoffs        []string `yaml:"allowed_handoffs"`
 	AllowedSandboxRuntimes []string `yaml:"allowed_sandbox_runtimes"`
 	Priority               int      `yaml:"priority"`
 	Weight                 int      `yaml:"weight"`
@@ -121,6 +123,7 @@ func loadAgentFile(path string) (AgentCatalogEntry, error) {
 		SystemPrompt:         spec.SystemPrompt,
 		Provider:             spec.Provider,
 		Model:                spec.Model,
+		ReasoningEffort:      spec.ReasoningEffort,
 		DelegationRuntime:    spec.DelegationRuntime,
 		SandboxWorkspaceRoot: spec.SandboxWorkspaceRoot,
 		Tools:                append([]string(nil), spec.Tools...),
@@ -130,6 +133,7 @@ func loadAgentFile(path string) (AgentCatalogEntry, error) {
 			AllowBroadcast:         spec.Policies.AllowBroadcast,
 			AllowToolCalls:         spec.Policies.AllowToolCalls,
 			AllowSandboxDelegation: spec.Policies.AllowSandboxDelegation,
+			AllowedHandoffs:        toAgentIDs(spec.Policies.AllowedHandoffs),
 			AllowedSandboxRuntimes: append([]string(nil), spec.Policies.AllowedSandboxRuntimes...),
 			Priority:               spec.Policies.Priority,
 			Weight:                 spec.Policies.Weight,
@@ -145,4 +149,15 @@ func loadAgentFile(path string) (AgentCatalogEntry, error) {
 		Agent: agent,
 		Color: strings.TrimSpace(spec.Color),
 	}, nil
+}
+
+func toAgentIDs(values []string) []domain.AgentID {
+	if len(values) == 0 {
+		return nil
+	}
+	ids := make([]domain.AgentID, 0, len(values))
+	for _, value := range values {
+		ids = append(ids, domain.AgentID(strings.TrimSpace(value)))
+	}
+	return ids
 }

@@ -82,6 +82,25 @@ func testAgentsCatalogDir(t *testing.T) string {
 	return dir
 }
 
+func shippedAgentsCatalogDir(t *testing.T) string {
+	t.Helper()
+
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("runtime.Caller(0) failed")
+	}
+
+	dir := filepath.Join(filepath.Dir(file), "..", "..", "crew_agents")
+	info, err := os.Stat(dir)
+	if err != nil {
+		t.Fatalf("Stat(%q) error = %v", dir, err)
+	}
+	if !info.IsDir() {
+		t.Fatalf("expected %q to be a directory", dir)
+	}
+	return dir
+}
+
 func copyTestAgentsCatalog(t *testing.T, targetRoot string) string {
 	t.Helper()
 

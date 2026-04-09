@@ -68,6 +68,7 @@ func TestStoreRepositoriesRoundTrip(t *testing.T) {
 		SystemPrompt:         "Plan work",
 		Provider:             "local_stub",
 		Model:                "gpt-test",
+		ReasoningEffort:      "medium",
 		DelegationRuntime:    "codex",
 		SandboxWorkspaceRoot: "/tmp/planner-sandbox",
 		Tools:                []string{"search"},
@@ -173,6 +174,9 @@ func TestStoreRepositoriesRoundTrip(t *testing.T) {
 	}
 	if gotAgent.Name != agent.Name {
 		t.Fatalf("expected agent %q, got %q", agent.Name, gotAgent.Name)
+	}
+	if gotAgent.ReasoningEffort != agent.ReasoningEffort {
+		t.Fatalf("expected reasoning effort %q, got %q", agent.ReasoningEffort, gotAgent.ReasoningEffort)
 	}
 	if gotAgent.DelegationRuntime != agent.DelegationRuntime {
 		t.Fatalf("expected delegation runtime %q, got %q", agent.DelegationRuntime, gotAgent.DelegationRuntime)

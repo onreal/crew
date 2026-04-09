@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os/exec"
 	"strings"
 	"time"
@@ -16,6 +17,8 @@ type CommandRequest struct {
 	Dir        string
 	Env        []string
 	Timeout    time.Duration
+	StdoutSink io.Writer
+	StderrSink io.Writer
 }
 
 type CommandResult struct {
@@ -51,7 +54,13 @@ func RunCommand(parent context.Context, request CommandRequest) (CommandResult, 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 	cmd.Stdout = &stdout
+	if request.StdoutSink != nil {
+		cmd.Stdout = io.MultiWriter(&stdout, request.StdoutSink)
+	}
 	cmd.Stderr = &stderr
+	if request.StderrSink != nil {
+		cmd.Stderr = io.MultiWriter(&stderr, request.StderrSink)
+	}
 
 	startedAt := time.Now().UTC()
 	err := cmd.Run()

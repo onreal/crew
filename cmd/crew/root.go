@@ -1119,7 +1119,7 @@ func newTUICmd(state *runtimeState) *cobra.Command {
 		},
 	}
 	attachCmd.Flags().StringVar(&attachSessionID, "session-id", "", "Session ID")
-	attachCmd.Flags().StringVar(&attachConversationID, "conversation-id", "", "Optional conversation ID filter")
+	attachCmd.Flags().StringVar(&attachConversationID, "conversation-id", "", "Initial send conversation ID; the room still shows the full session timeline")
 	attachCmd.Flags().BoolVar(&attachFollow, "follow", true, "Keep polling for new persisted stream entries")
 	attachCmd.Flags().IntVar(&attachPollIntervalMillis, "poll-interval-millis", 0, "Polling interval override in milliseconds; defaults to ui.refresh_interval_millis")
 	attachCmd.Flags().IntVar(&attachAutoSteps, "auto-steps", -1, "After plain text input, run up to N free-mode turns in the attached conversation; defaults to ui.attach_auto_steps")

@@ -11,6 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	codexadapter "crew/internal/adapters/providers/codex"
 	runtimeadapter "crew/internal/adapters/runtime"
 	"crew/internal/application"
 	"crew/internal/domain"
@@ -56,6 +57,8 @@ type attachModel struct {
 	lastError             string
 	pendingOps            int
 	pendingAgentStates    map[domain.AgentID]string
+	reasoningByAgent      map[domain.AgentID]string
+	activeStepEvents      <-chan tea.Msg
 	width                 int
 	height                int
 	layoutBodyHeight      int
@@ -140,6 +143,12 @@ type attachStepProgressMsg struct {
 	remaining int
 }
 
+type attachReasoningMsg struct {
+	agentID domain.AgentID
+	text    string
+}
+
+type attachStepStreamStartedMsg struct{ events <-chan tea.Msg }
 type attachErrMsg struct{ err error }
 type attachTickMsg time.Time
 type attachBeginDispatchMsg struct {
@@ -202,6 +211,7 @@ func newAttachModel(
 		historyIndex:       -1,
 		status:             fmt.Sprintf("attached to %s / %s", options.SessionID, sendConversationID),
 		pendingAgentStates: make(map[domain.AgentID]string),
+		reasoningByAgent:   make(map[domain.AgentID]string),
 	}
 	model.agents, model.agentColors = mustLoadAttachAgents(model.agentsDir)
 	model.refreshInputAssist()
@@ -209,6 +219,10 @@ func newAttachModel(
 	model.viewport.SetContent(model.styles.muted.Render("Loading room..."))
 	model.lastRoomPlainContent = "Loading room..."
 	return model
+}
+
+func newAttachReasoningMsg(event codexadapter.ReasoningEvent) attachReasoningMsg {
+	return attachReasoningMsg{agentID: domain.AgentID(event.AgentID), text: strings.TrimSpace(event.Text)}
 }
 
 func mustLoadAttachAgents(agentsDir string) ([]domain.Agent, map[string]string) {

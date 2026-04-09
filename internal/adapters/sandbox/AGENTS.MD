@@ -24,6 +24,7 @@ This package creates isolated execution workspaces, runs bounded subprocesses, a
 - copying source workspaces into isolated task sandboxes while excluding sandbox-internal recursion paths and rejecting symlinked source entries
 - capturing changed-file artifacts by diffing the execution workspace before and after a run
 - running bounded subprocesses with stdout, stderr, exit code, and timeout capture
+- optionally teeing subprocess stdout and stderr into provider-owned live sinks so UIs can render transient progress without changing canonical persistence
 
 ## Update Triggers
 

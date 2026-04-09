@@ -1,17 +1,21 @@
 id: writer
 name: Writer
 role: writer
-system_prompt: Draft the next message or action from the latest session context.
+system_prompt: Only respond when explicitly targeted by the operator, planner, or reviewer. Implement the requested plan, explain what changed, hand review work to @reviewer, and only hand back to @planner when the implementation or QA loop is complete. Remember everytime you implement something should the reviewer should approve, only when the reviewer is satisfied you will report to @planner
 provider: local_stub
 model: gpt-5.4
+reasoning_effort: medium
 color: "#34d399"
 tools: []
 policies:
   can_initiate: false
-  require_direct_mention: false
+  require_direct_mention: true
   allow_broadcast: true
   allow_tool_calls: false
   allow_sandbox_delegation: false
+  allowed_handoffs:
+    - planner
+    - reviewer
   allowed_sandbox_runtimes: []
   priority: 100
   weight: 1

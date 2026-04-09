@@ -112,6 +112,7 @@ func TestAttachModelStepProgressClearsPendingBeforeRefresh(t *testing.T) {
 	model.width, model.height = 120, 30
 	model.layout()
 	model.pendingAgentStates = map[domain.AgentID]string{"reviewer": "thinking", "writer": "queued"}
+	model.reasoningByAgent = map[domain.AgentID]string{"reviewer": "checking the latest patch"}
 	model.room = attachRoomState{
 		snapshot: runtimeadapter.SessionSnapshot{
 			Session: domain.Session{ID: "session-1", Mode: domain.SessionModeFree, Status: domain.SessionStatusRunning},
@@ -131,6 +132,9 @@ func TestAttachModelStepProgressClearsPendingBeforeRefresh(t *testing.T) {
 	next := updated.(attachModel)
 	if len(next.pendingAgentStates) != 0 {
 		t.Fatalf("expected pending agent states cleared after final step, got %#v", next.pendingAgentStates)
+	}
+	if len(next.reasoningByAgent) != 0 {
+		t.Fatalf("expected reasoning state cleared after final step, got %#v", next.reasoningByAgent)
 	}
 	if strings.Contains(next.renderHeader(), "thinking") || strings.Contains(next.renderHeader(), "queued") {
 		t.Fatalf("expected no pending activity in header after final step, got:\n%s", next.renderHeader())
@@ -183,6 +187,46 @@ func TestAttachModelErrorRendersNoticeInConversation(t *testing.T) {
 	}
 }
 
+func TestAttachModelReasoningUpdateStaysOutOfConversation(t *testing.T) {
+	ui := platform.DefaultConfig().UI
+	model := newAttachModel(context.Background(), nil, liveViewOptions{SessionID: "session-1"}, "conversation-1", ui)
+	model.agents = []domain.Agent{testAttachAgent("planner", 100)}
+	model.width, model.height = 120, 30
+	model.layout()
+	updated, _ := model.Update(attachStepStreamStartedMsg{events: make(chan tea.Msg)})
+	model = updated.(attachModel)
+
+	updated, _ = model.Update(attachReasoningMsg{agentID: "planner", text: "checking the workspace layout"})
+	next := updated.(attachModel)
+	if !strings.Contains(next.renderHeader(), "planner reasoning: checking the workspace layout") {
+		t.Fatalf("expected reasoning in header, got:\n%s", next.renderHeader())
+	}
+	if !strings.Contains(next.renderBody(), "planner reasoning") || !strings.Contains(next.renderBody(), "checking the workspace") {
+		t.Fatalf("expected dedicated reasoning pane in body, got:\n%s", next.renderBody())
+	}
+	if strings.Contains(next.renderConversationContent("conversation-1"), "checking the workspace layout") {
+		t.Fatalf("expected reasoning to stay out of conversation content, got:\n%s", next.renderConversationContent("conversation-1"))
+	}
+}
+
+func TestAttachModelHidesReasoningPaneUntilProgressArrives(t *testing.T) {
+	ui := platform.DefaultConfig().UI
+	model := newAttachModel(context.Background(), nil, liveViewOptions{SessionID: "session-1"}, "conversation-1", ui)
+	model.agents = []domain.Agent{testAttachAgent("planner", 100)}
+	model.pendingAgentStates = map[domain.AgentID]string{"planner": "thinking"}
+	model.width, model.height = 120, 30
+	model.layout()
+
+	updated, _ := model.Update(attachStepStreamStartedMsg{events: make(chan tea.Msg)})
+	next := updated.(attachModel)
+	if strings.Contains(next.renderBody(), "No reasoning emitted yet.") {
+		t.Fatalf("expected blank reasoning pane to stay hidden, got:\n%s", next.renderBody())
+	}
+	if next.layoutPreviewWidth != 0 {
+		t.Fatalf("expected no preview pane without progress text, got width %d", next.layoutPreviewWidth)
+	}
+}
+
 func TestAttachModelCopyFailureSetsClipboardError(t *testing.T) {
 	ui := platform.DefaultConfig().UI
 	model := newAttachModel(context.Background(), nil, liveViewOptions{SessionID: "session-1"}, "conversation-1", ui)
@@ -195,5 +239,38 @@ func TestAttachModelCopyFailureSetsClipboardError(t *testing.T) {
 	model = updated.(attachModel)
 	if !strings.Contains(model.lastError, "clipboard copy failed: clipboard unavailable") {
 		t.Fatalf("expected clipboard error, got %q", model.lastError)
+	}
+}
+
+func TestAttachModelHidesSandboxNoiseButKeepsCompletionSummary(t *testing.T) {
+	ui := platform.DefaultConfig().UI
+	now := time.Now().UTC()
+	model := newAttachModel(context.Background(), nil, liveViewOptions{SessionID: "session-1"}, "conversation-1", ui)
+	model.room = attachRoomState{
+		snapshot: runtimeadapter.SessionSnapshot{
+			Session: domain.Session{ID: "session-1", Mode: domain.SessionModeFree, Status: domain.SessionStatusRunning},
+			Messages: []domain.Message{
+				{ID: "message-1", SessionID: "session-1", ConversationID: "conversation-1", Sender: domain.AgentSender("planner"), Channel: domain.MessageChannelBroadcast, Kind: domain.MessageKindUtterance, Body: "Planning done.\n\n@writer", Timestamp: now},
+				{ID: "message-2", SessionID: "session-1", ConversationID: "conversation-1", Sender: domain.SystemSender("sandbox"), Channel: domain.MessageChannelSystem, Kind: domain.MessageKindEvent, Body: "Planner delegated sandbox task task-1 to codex: build it", Timestamp: now.Add(time.Second)},
+				{ID: "message-3", SessionID: "session-1", ConversationID: "conversation-1", Sender: domain.SystemSender("sandbox"), Channel: domain.MessageChannelSystem, Kind: domain.MessageKindEvent, Body: "Sandbox task task-1 completed on codex: built the site", Timestamp: now.Add(2 * time.Second)},
+			},
+			Stream: []runtimeadapter.StreamEntry{
+				{RecordedAt: now, Payload: application.MessageDispatchedEvent{Message: domain.Message{ID: "message-1", SessionID: "session-1", ConversationID: "conversation-1", Sender: domain.AgentSender("planner"), Channel: domain.MessageChannelBroadcast, Kind: domain.MessageKindUtterance, Body: "Planning done.\n\n@writer"}}},
+				{RecordedAt: now.Add(time.Millisecond), Payload: application.AgentTaskCreatedEvent{Task: application.SandboxTask{ID: "task-1", SessionID: "session-1", ConversationID: "conversation-1", RuntimeName: "codex", Instruction: "build it"}}},
+				{RecordedAt: now.Add(2 * time.Millisecond), Payload: application.AgentHandoffCreatedEvent{Handoff: application.AgentHandoff{ID: "handoff-1", SessionID: "session-1", ConversationID: "conversation-1", FromAgentID: "planner", ToProviderClass: application.AgentProviderClassSandboxedRuntime, TaskID: "task-1", Reason: "Delegated sandbox task"}}},
+				{RecordedAt: now.Add(time.Second), Payload: application.MessageDispatchedEvent{Message: domain.Message{ID: "message-2", SessionID: "session-1", ConversationID: "conversation-1", Sender: domain.SystemSender("sandbox"), Channel: domain.MessageChannelSystem, Kind: domain.MessageKindEvent, Body: "Planner delegated sandbox task task-1 to codex: build it"}}},
+				{RecordedAt: now.Add(time.Second + time.Millisecond), Payload: application.AgentTaskUpdatedEvent{Task: application.SandboxTask{ID: "task-1", SessionID: "session-1", ConversationID: "conversation-1", RuntimeName: "codex", Status: application.SandboxTaskStatusRunning}}},
+				{RecordedAt: now.Add(2 * time.Second), Payload: application.MessageDispatchedEvent{Message: domain.Message{ID: "message-3", SessionID: "session-1", ConversationID: "conversation-1", Sender: domain.SystemSender("sandbox"), Channel: domain.MessageChannelSystem, Kind: domain.MessageKindEvent, Body: "Sandbox task task-1 completed on codex: built the site"}}},
+			},
+		},
+		conversations: []domain.ConversationID{"conversation-1"},
+	}
+
+	rendered := model.renderConversationContent("conversation-1")
+	if strings.Contains(rendered, "delegated sandbox task") || strings.Contains(rendered, "running") || strings.Contains(rendered, "handoff") {
+		t.Fatalf("expected sandbox chatter to stay hidden, got:\n%s", rendered)
+	}
+	if !strings.Contains(rendered, "Sandbox task task-1 completed on codex: built the site") {
+		t.Fatalf("expected final sandbox completion summary to remain visible, got:\n%s", rendered)
 	}
 }

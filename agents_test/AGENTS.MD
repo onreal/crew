@@ -16,6 +16,10 @@ This directory gives tests a stable agent roster so CLI, runtime, and TUI checks
 - agent definitions here must stay valid against the domain `Agent` contract
 - optional presentation metadata such as `color` must stay deterministic so TUI tests can rely on a stable fixture catalog
 - agent policies here may include deterministic orchestration hints such as `priority` and `weight`; changes to those values change who is considered first in free mode
+- the planner/writer/reviewer fixtures intentionally model the production-style workflow graph: planner can initiate from plain user messages, while writer and reviewer require explicit mentions or handoffs
+- the writer fixture may reply-thread back to planner so tests can close planner-owned obligations while still handing visible review work to reviewer
+- these fixtures intentionally remain `local_stub`-backed even though the shipped/init catalog uses Codex, because runtime and CLI tests need deterministic offline behavior while still exercising the same orchestration graph and schema fields such as `reasoning_effort`
+- `allowed_handoffs` in these fixtures is part of the runtime contract under test and must stay aligned with free-mode routing expectations
 - sandbox permissions here are business-significant and must be explicit; do not grant sandbox delegation casually
 - duplicate agent IDs across files are invalid
 

@@ -180,6 +180,39 @@ func TestAttachModelDefaultRoomScopeShowsWholeSessionTimeline(t *testing.T) {
 	}
 }
 
+func TestAttachModelPinnedSendTargetStillShowsWholeSessionTimeline(t *testing.T) {
+	ui := platform.DefaultConfig().UI
+	now := time.Now().UTC()
+	model := newAttachModel(context.Background(), nil, liveViewOptions{SessionID: "session-1", ConversationID: "conversation-2"}, "conversation-2", ui)
+	model.room = attachRoomState{
+		snapshot: runtimeadapter.SessionSnapshot{
+			Session: domain.Session{ID: "session-1", Mode: domain.SessionModeFree, Status: domain.SessionStatusRunning},
+			Messages: []domain.Message{
+				{ID: "message-1", SessionID: "session-1", ConversationID: "conversation-1", Sender: domain.UserSender("operator"), Channel: domain.MessageChannelUser, Kind: domain.MessageKindUtterance, Body: "older thread context", Timestamp: now},
+				{ID: "message-2", SessionID: "session-1", ConversationID: "conversation-2", Sender: domain.AgentSender("planner"), Channel: domain.MessageChannelBroadcast, Kind: domain.MessageKindUtterance, Body: "current thread context", Timestamp: now.Add(time.Second)},
+			},
+			Stream: []runtimeadapter.StreamEntry{
+				{RecordedAt: now, Payload: application.MessageDispatchedEvent{Message: domain.Message{ID: "message-1", SessionID: "session-1", ConversationID: "conversation-1", Sender: domain.UserSender("operator"), Channel: domain.MessageChannelUser, Kind: domain.MessageKindUtterance, Body: "older thread context"}}},
+				{RecordedAt: now.Add(time.Second), Payload: application.MessageDispatchedEvent{Message: domain.Message{ID: "message-2", SessionID: "session-1", ConversationID: "conversation-2", Sender: domain.AgentSender("planner"), Channel: domain.MessageChannelBroadcast, Kind: domain.MessageKindUtterance, Body: "current thread context"}}},
+			},
+		},
+		conversations: []domain.ConversationID{"conversation-1", "conversation-2"},
+	}
+	model.width, model.height = 100, 24
+	model.layout()
+	model.syncViewportContent(true)
+
+	if got := model.roomConversationScope(); got != "" {
+		t.Fatalf("expected attach room to stay on session scope, got %q", got)
+	}
+	if !strings.Contains(model.lastViewportContent, "conversation-1") || !strings.Contains(model.lastViewportContent, "conversation-2") {
+		t.Fatalf("expected session timeline to include both conversations, got:\n%s", model.lastViewportContent)
+	}
+	if !strings.Contains(model.renderHeader(), "scope=session") || !strings.Contains(model.renderHeader(), "send=conversation-2") {
+		t.Fatalf("expected header to show session scope and send target, got:\n%s", model.renderHeader())
+	}
+}
+
 func TestAttachModelCompactStatusShowsTotalAndPerParticipantCounts(t *testing.T) {
 	ui := platform.DefaultConfig().UI
 	now := time.Now().UTC()

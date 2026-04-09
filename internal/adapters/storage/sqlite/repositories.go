@@ -345,14 +345,15 @@ func (r *AgentRepository) Upsert(ctx context.Context, agent domain.Agent) error 
 
 	_, err = r.store.execer(ctx).ExecContext(
 		ctx,
-		`INSERT INTO agents(id, name, role, system_prompt, provider, model, delegation_runtime, sandbox_workspace_root, tools_json, policies_json, active)
-VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+		`INSERT INTO agents(id, name, role, system_prompt, provider, model, reasoning_effort, delegation_runtime, sandbox_workspace_root, tools_json, policies_json, active)
+VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
 ON CONFLICT(id) DO UPDATE SET
   name = excluded.name,
   role = excluded.role,
   system_prompt = excluded.system_prompt,
   provider = excluded.provider,
   model = excluded.model,
+  reasoning_effort = excluded.reasoning_effort,
   delegation_runtime = excluded.delegation_runtime,
   sandbox_workspace_root = excluded.sandbox_workspace_root,
   tools_json = excluded.tools_json,
@@ -364,6 +365,7 @@ ON CONFLICT(id) DO UPDATE SET
 		agent.SystemPrompt,
 		agent.Provider,
 		agent.Model,
+		agent.ReasoningEffort,
 		agent.DelegationRuntime,
 		agent.SandboxWorkspaceRoot,
 		toolsJSON,
@@ -383,6 +385,7 @@ func (r *AgentRepository) GetByID(ctx context.Context, id domain.AgentID) (domai
 		systemPrompt         string
 		provider             string
 		model                string
+		reasoningEffort      string
 		delegationRuntime    string
 		sandboxWorkspaceRoot string
 		toolsJSON            string
@@ -391,11 +394,11 @@ func (r *AgentRepository) GetByID(ctx context.Context, id domain.AgentID) (domai
 
 	err := r.store.execer(ctx).QueryRowContext(
 		ctx,
-		`SELECT name, role, system_prompt, provider, model, delegation_runtime, sandbox_workspace_root, tools_json, policies_json
+		`SELECT name, role, system_prompt, provider, model, reasoning_effort, delegation_runtime, sandbox_workspace_root, tools_json, policies_json
 FROM agents
 WHERE id = ? AND active = 1`,
 		string(id),
-	).Scan(&name, &role, &systemPrompt, &provider, &model, &delegationRuntime, &sandboxWorkspaceRoot, &toolsJSON, &policiesJSON)
+	).Scan(&name, &role, &systemPrompt, &provider, &model, &reasoningEffort, &delegationRuntime, &sandboxWorkspaceRoot, &toolsJSON, &policiesJSON)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return domain.Agent{}, application.NotFoundError{Entity: "agent", ID: string(id)}
@@ -420,6 +423,7 @@ WHERE id = ? AND active = 1`,
 		SystemPrompt:         systemPrompt,
 		Provider:             provider,
 		Model:                model,
+		ReasoningEffort:      reasoningEffort,
 		DelegationRuntime:    delegationRuntime,
 		SandboxWorkspaceRoot: sandboxWorkspaceRoot,
 		Tools:                tools,
@@ -435,7 +439,7 @@ WHERE id = ? AND active = 1`,
 func (r *AgentRepository) List(ctx context.Context) ([]domain.Agent, error) {
 	rows, err := r.store.execer(ctx).QueryContext(
 		ctx,
-		`SELECT id, name, role, system_prompt, provider, model, delegation_runtime, sandbox_workspace_root, tools_json, policies_json
+		`SELECT id, name, role, system_prompt, provider, model, reasoning_effort, delegation_runtime, sandbox_workspace_root, tools_json, policies_json
 FROM agents
 WHERE active = 1
 ORDER BY id ASC`,
@@ -454,12 +458,13 @@ ORDER BY id ASC`,
 			systemPrompt         string
 			provider             string
 			model                string
+			reasoningEffort      string
 			delegationRuntime    string
 			sandboxWorkspaceRoot string
 			toolsJSON            string
 			policiesJSON         string
 		)
-		if err := rows.Scan(&id, &name, &role, &systemPrompt, &provider, &model, &delegationRuntime, &sandboxWorkspaceRoot, &toolsJSON, &policiesJSON); err != nil {
+		if err := rows.Scan(&id, &name, &role, &systemPrompt, &provider, &model, &reasoningEffort, &delegationRuntime, &sandboxWorkspaceRoot, &toolsJSON, &policiesJSON); err != nil {
 			return nil, fmt.Errorf("scan listed agent: %w", err)
 		}
 
@@ -480,6 +485,7 @@ ORDER BY id ASC`,
 			SystemPrompt:         systemPrompt,
 			Provider:             provider,
 			Model:                model,
+			ReasoningEffort:      reasoningEffort,
 			DelegationRuntime:    delegationRuntime,
 			SandboxWorkspaceRoot: sandboxWorkspaceRoot,
 			Tools:                tools,

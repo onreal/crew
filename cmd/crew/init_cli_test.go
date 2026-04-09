@@ -71,9 +71,9 @@ func TestCrewInitCreatesPlaceholderCatalog(t *testing.T) {
 	requireTestAgentFile(t, catalogDir, "AGENTS.MD")
 	for _, name := range []string{"planner.yaml", "reviewer.yaml", "writer.yaml"} {
 		got := mustReadTestAgentFile(t, catalogDir, name)
-		want := mustReadTestAgentFile(t, testAgentsCatalogDir(t), name)
+		want := mustReadTestAgentFile(t, shippedAgentsCatalogDir(t), name)
 		if got != want {
-			t.Fatalf("expected %s to match test fixture", name)
+			t.Fatalf("expected %s to match shipped crew_agents catalog", name)
 		}
 	}
 }

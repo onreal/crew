@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -178,7 +179,7 @@ provider: local_stub
 model: gpt-5.4
 tools: []
 policies:
-  can_initiate: false
+  can_initiate: true
   require_direct_mention: false
   allow_broadcast: true
   allow_tool_calls: false
@@ -254,7 +255,7 @@ provider: local_stub
 model: gpt-5.4
 tools: []
 policies:
-  can_initiate: false
+  can_initiate: true
   require_direct_mention: false
   allow_broadcast: true
   allow_tool_calls: true
@@ -293,7 +294,7 @@ func TestLocalStubOrchestratorMentionedFirstPrioritizesMentionedAgent(t *testing
 	decision, err := orchestrator.SelectNext(context.Background(), application.ConversationState{
 		LastMessage: &domain.Message{
 			Sender: domain.UserSender("operator"),
-			Body:   "writer please draft the response",
+			Body:   "@writer please draft the response",
 		},
 		Mode: application.OrchestrationModeMentionedFirst,
 	}, candidates)
@@ -534,6 +535,98 @@ func TestRuntimeAutoSessionDirectRecipientsAllReplyBeforeStopping(t *testing.T) 
 	}
 }
 
+func TestRuntimeWorkflowStubUsesPlannerWriterReviewerHandoffs(t *testing.T) {
+	agentsDir := writeDefaultAgentsDir(t)
+	rt := New(nil, nil, fixedClock{now: time.Date(2026, 3, 20, 12, 0, 0, 0, time.UTC)}, memory.NewSequenceIDGenerator(), Config{
+		AgentsDir: agentsDir,
+	})
+	ctx := context.Background()
+
+	if err := rt.Start(ctx); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	defer func() {
+		if err := rt.Shutdown(context.Background()); err != nil {
+			t.Fatalf("Shutdown() error = %v", err)
+		}
+	}()
+
+	session, err := rt.CreateSession(ctx, domain.SessionModeFree)
+	if err != nil {
+		t.Fatalf("CreateSession() error = %v", err)
+	}
+	if _, err := rt.StartSession(ctx, session.ID); err != nil {
+		t.Fatalf("StartSession() error = %v", err)
+	}
+	if _, err := rt.DispatchMessage(ctx, application.DispatchMessageCommand{
+		SessionID:      session.ID,
+		ConversationID: "conversation-1",
+		Sender:         domain.UserSender("operator"),
+		Channel:        domain.MessageChannelUser,
+		Kind:           domain.MessageKindUtterance,
+		Body:           "I want a website",
+	}); err != nil {
+		t.Fatalf("DispatchMessage(first user) error = %v", err)
+	}
+
+	firstStep, err := rt.StepSession(ctx, application.StepSessionCommand{SessionID: session.ID})
+	if err != nil {
+		t.Fatalf("StepSession(first) error = %v", err)
+	}
+	if !firstStep.Stepped || firstStep.Agent == nil || firstStep.Agent.ID != "planner" {
+		t.Fatalf("expected planner to answer first, got %+v", firstStep)
+	}
+	if firstStep.Message == nil || !strings.Contains(strings.ToLower(firstStep.Message.Body), "what website do you want") {
+		t.Fatalf("expected planner clarifying question, got %+v", firstStep.Message)
+	}
+
+	if _, err := rt.DispatchMessage(ctx, application.DispatchMessageCommand{
+		SessionID:      session.ID,
+		ConversationID: "conversation-1",
+		Sender:         domain.UserSender("operator"),
+		Channel:        domain.MessageChannelUser,
+		Kind:           domain.MessageKindUtterance,
+		Body:           "About a car washing business",
+	}); err != nil {
+		t.Fatalf("DispatchMessage(second user) error = %v", err)
+	}
+
+	auto, err := rt.AutoSession(ctx, application.AutoSessionCommand{
+		SessionID: session.ID,
+		MaxSteps:  3,
+	})
+	if err != nil {
+		t.Fatalf("AutoSession() error = %v", err)
+	}
+	if !slices.Equal(auto.SelectedAgentIDs, []domain.AgentID{"planner", "writer", "reviewer"}) {
+		t.Fatalf("expected planner-writer-reviewer handoff chain, got %v", auto.SelectedAgentIDs)
+	}
+	if len(auto.Steps) != 3 {
+		t.Fatalf("expected 3 steps, got %d", len(auto.Steps))
+	}
+	if !strings.Contains(auto.Steps[0].Message.Body, "\n@writer") {
+		t.Fatalf("expected planner to hand off to writer, got %q", auto.Steps[0].Message.Body)
+	}
+	if !strings.Contains(auto.Steps[1].Message.Body, "\n@reviewer") {
+		t.Fatalf("expected writer to hand off to reviewer, got %q", auto.Steps[1].Message.Body)
+	}
+	if !strings.Contains(auto.Steps[2].Message.Body, "\n@writer") {
+		t.Fatalf("expected reviewer to hand back to writer, got %q", auto.Steps[2].Message.Body)
+	}
+}
+
+func TestRuntimeBodyMentionsAgentRequiresExactHandleToken(t *testing.T) {
+	if !bodyMentionsAgent("I need a writable workspace before I can continue. @planner", "planner") {
+		t.Fatal("expected exact handle mention to count")
+	}
+	if !bodyMentionsAgent("I might ask @planner later if needed.", "planner") {
+		t.Fatal("expected inline exact handle mention to count")
+	}
+	if bodyMentionsAgent("@plannering is not planner", "planner") {
+		t.Fatal("expected longer handle prefix not to count")
+	}
+}
+
 func TestRuntimeShutdownIsCleanAndIdempotent(t *testing.T) {
 	rt := New(nil, nil, fixedClock{now: time.Now().UTC()}, memory.NewSequenceIDGenerator(), Config{})
 	ctx := context.Background()
@@ -714,7 +807,7 @@ func runtimeTestAgent(id domain.AgentID, maxConsecutiveTurns int, priority int, 
 		Provider:     "local_stub",
 		Model:        "local-stub",
 		Policies: domain.AgentPolicy{
-			CanInitiate:          false,
+			CanInitiate:          true,
 			RequireDirectMention: false,
 			AllowBroadcast:       true,
 			AllowToolCalls:       false,

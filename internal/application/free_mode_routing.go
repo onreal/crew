@@ -201,6 +201,18 @@ func obligationsFromMessage(message domain.Message, index int, agents []domain.A
 		return obligations
 	case domain.MessageSenderTypeAgent:
 		recipients := uniqueTargetedAgents(message, agents)
+		if message.Channel == domain.MessageChannelDirect &&
+			message.ReplyTo != "" &&
+			routingMetadataString(message, replyRoutingMetadataType) == replyRecipientTypeAgent {
+			filtered := recipients[:0]
+			for _, recipient := range recipients {
+				if containsAgentID(message.ToAgentIDs, recipient) {
+					continue
+				}
+				filtered = append(filtered, recipient)
+			}
+			recipients = filtered
+		}
 		if len(recipients) == 0 {
 			return nil
 		}
@@ -225,9 +237,29 @@ func obligationsFromMessage(message domain.Message, index int, agents []domain.A
 }
 
 func uniqueTargetedAgents(message domain.Message, agents []domain.Agent) []domain.AgentID {
+	var senderAgent domain.Agent
+	senderFound := false
+	for _, agent := range agents {
+		if agent.ID == domain.AgentID(message.Sender.ID) {
+			senderAgent = agent
+			senderFound = true
+			break
+		}
+	}
+
 	seen := make(map[domain.AgentID]struct{})
 	targets := make([]domain.AgentID, 0, len(message.ToAgentIDs))
+	replyRecipient := domain.AgentID("")
+	if routingMetadataString(message, replyRoutingMetadataType) == replyRecipientTypeAgent {
+		replyRecipient = domain.AgentID(routingMetadataString(message, replyRoutingMetadataID))
+	}
 	for _, target := range message.ToAgentIDs {
+		if replyRecipient != "" && target == replyRecipient {
+			continue
+		}
+		if senderFound && !senderAgent.AllowsHandoffTo(target) {
+			continue
+		}
 		if _, exists := seen[target]; exists {
 			continue
 		}
@@ -238,7 +270,10 @@ func uniqueTargetedAgents(message domain.Message, agents []domain.Agent) []domai
 		if agent.ID == domain.AgentID(message.Sender.ID) {
 			continue
 		}
-		if !messageMentionsAgent(message, agent.ID) {
+		if !messageHandsOffToAgent(message, agent.ID) {
+			continue
+		}
+		if senderFound && !senderAgent.AllowsHandoffTo(agent.ID) {
 			continue
 		}
 		if _, exists := seen[agent.ID]; exists {

@@ -37,7 +37,9 @@ You can currently:
 - execute a bounded multi-turn free-mode run with `session auto`
 - choose reply-routing semantics independently from orchestration with `latest_speaker` or `reply_obligations`
 - start a free session and enter the live chat room immediately when running on a real terminal
+- keep the attached room as one continuous full-session timeline; `tui attach --conversation-id` only changes the initial send target, not what the room shows
 - watch the persisted session stream as a live terminal view with `session tail` or `tui attach`
+- see transient Codex reasoning/progress in `tui attach` while a turn is still running, including a dedicated reasoning pane once real progress arrives, without mixing that output into the persisted conversation transcript
 - keep working with the same session across separate CLI invocations
 - inspect the persisted session event stream
 - inspect vector backend/index state
@@ -65,7 +67,9 @@ Optional Phase 5B work:
 Optional provider-backed free-mode generation:
 
 - text-provider selection is now per agent through `crew_agents/*.yaml`
+- shipped/bootstrap planner, reviewer, and writer agents now default to `provider: codex`, `model: gpt-5.4`, and `reasoning_effort: medium`
 - provider connection settings live under top-level `providers:` config entries such as `openai`, `gemini`, and `grok`
+- `providers.codex.timeout_millis: 0` disables the direct-text timeout and is now the default because Codex turns may legitimately run longer than a fixed short wall clock
 - the same session may mix agents from different text providers while keeping the same persistence, orchestration, and audit behavior
 - the OpenAI-style text adapter returns a structured response envelope, so providers can request sandbox delegation without leaking provider-specific tool formats into the runtime
 
@@ -195,7 +199,7 @@ What `install.sh` provisions:
 - updates a supported shell startup file so `INSTALL_DIR` is added to `PATH` when it is not already there
 - validates that the installed wrapper can read the seeded config and agent catalog immediately
 
-Install behavior intentionally preserves an existing home config, but reinstall now refreshes the installed fallback `crew_agents` catalog so the command picks up the latest shipped agent changes.
+Install behavior intentionally preserves an existing home config, but reinstall now refreshes the installed fallback `crew_agents` catalog and reconciles `providers.codex.timeout_millis` from the old shipped default `30000` to the current shipped default `0` so stale direct-text timeouts do not linger forever.
 
 Supported PATH bootstrap targets:
 
@@ -207,7 +211,7 @@ The installer does not install external runtimes or provider credentials for you
 
 - Go and a working C toolchain are still required at install time
 - bundled Grok-backed agents still need `XAI_API_KEY` at runtime
-- sandbox tasks and `provider: codex` still require the `codex` CLI to be installed and authenticated
+- the shipped `crew init` agents and any `provider: codex` catalog entries require the `codex` CLI to be installed and authenticated
 
 ## Build
 
@@ -299,7 +303,7 @@ providers:
   codex:
     binary: codex
     working_directory: .
-    timeout_millis: 30000
+    timeout_millis: 0
 
 sandbox:
   default_provider: disabled
@@ -356,7 +360,7 @@ Notes:
 - `sandbox.source_workspace_root` is the source tree copied into per-task sandboxes for autonomous agent delegation
 - `sandbox.providers.<name>.workspace_root` is the root under which copied per-task execution workspaces are created for that runtime
 - `sandbox.permission_profile` maps to the provider sandbox mode; it does not change canonical runtime policy rules
-- `sandbox.providers.<name>.timeout_millis` is the per-runtime execution timeout
+- `sandbox.providers.<name>.timeout_millis` is the per-runtime execution timeout; `sandbox.providers.codex.timeout_millis: 0` disables the Codex sandbox timeout
 - sandbox tasks operate on copied workspaces inside `sandbox.providers.<name>.workspace_root`; they do not mutate the source workspace directly in this phase
 - free-mode sandbox delegation no longer chooses a runtime globally; each agent may now name its own `delegation_runtime`
 - an agent may also set `sandbox_workspace_root` to force its delegated tasks into its own sandbox root instead of the runtime default
@@ -410,7 +414,7 @@ providers:
   codex:
     binary: codex
     working_directory: .
-    timeout_millis: 30000
+    timeout_millis: 0
   openai:
     base_url: https://api.openai.com/v1
     api_key: ""

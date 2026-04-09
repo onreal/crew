@@ -28,6 +28,7 @@ This directory is the executable local engine for starting, controlling, observi
 - runtime provider assembly must support both HTTP-backed and CLI-backed text providers without collapsing them into sandbox runtime selection
 - runtime configuration must explicitly distinguish text-generation providers from sandboxed runtime providers
 - runtime must treat text-provider connection settings as transport config and agent `provider` values as canonical behavior config
+- runtime must also honor any canonical agent `reasoning_effort` when a provider supports it, so shipped/bootstrap agents can request Codex at medium effort without depending on one operator-global Codex config
 - runtime must treat sandbox runtime config as a named catalog under `sandbox.providers.<name>` and must route persisted tasks by `RuntimeName` rather than assuming one global CLI runtime
 - runtime must persist and honor agent-owned `delegation_runtime` plus optional `sandbox_workspace_root`, so free-mode delegated work does not depend on one room-wide runtime or one room-wide sandbox root
 - runtime sandbox task methods must use the same persisted coordination path as application sandbox-task services and must not bypass task identity or terminal-state recovery guarantees
@@ -40,6 +41,7 @@ This directory is the executable local engine for starting, controlling, observi
 - free-mode turn execution must resync filesystem-backed agent definitions before each step or auto run so attached sessions can pick up edited agent YAML without restarting the process
 - runtime free-mode orchestration must support explicit selectable strategies without changing the underlying eligibility rules that gate whether an agent may speak
 - runtime free-mode reply routing must support explicit selectable strategies independently from orchestration, so operator choice of `latest_speaker` versus `reply_obligations` changes addressing behavior without replacing the agent-selection strategy
+- explicit `@agent` handle tokens in agent-generated message bodies are first-class routing signals; runtime must treat exact handle mentions as real agent-to-agent targeting without depending on special final-line formatting
 - runtime base candidate ordering must remain deterministic and explainable when filesystem-backed agent policies specify priority and weight
 - round-robin orchestration must preserve the full agent ring even when the last speaker is temporarily ineligible, so bounded auto runs do not skip the next agent and snap back to the start of the roster
 - when an operator message directly targets multiple agents, runtime step/auto execution must preserve the remaining targeted recipients across subsequent steps until each has replied once, before ordinary orchestration resumes
@@ -62,6 +64,6 @@ This directory is the executable local engine for starting, controlling, observi
 - deterministic local stub orchestrator and per-agent text-provider routing across local stub plus configured external providers, including direct Codex CLI turns
 - session-scoped actor-catalog reseeding for free-mode runtime operations and attached-room agent metadata
 - configured named sandbox-runtime assembly and routing for Codex-backed task execution, with room for additional CLI runtimes behind the same port
-- filesystem-backed agent catalog loading, local-first `crew_agents/` discovery, installed fallback resolution, and startup seeding/update into canonical agent persistence
+- filesystem-backed agent catalog loading, local-first `crew_agents/` discovery, installed fallback resolution, startup seeding/update into canonical agent persistence, and shipped/init Codex bootstrap agents using `gpt-5.4` at medium reasoning effort
 - provider topology reporting for plain-text versus sandboxed runtime classes
 - memory-backed runtime state snapshot export/import for tests and transitional tooling

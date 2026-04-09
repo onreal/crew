@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"golang.org/x/term"
 
+	codexadapter "crew/internal/adapters/providers/codex"
 	runtimeadapter "crew/internal/adapters/runtime"
 	"crew/internal/application"
 	"crew/internal/domain"
@@ -161,21 +162,47 @@ func attachRunStepCmd(
 	remaining int,
 ) tea.Cmd {
 	return func() tea.Msg {
-		step, err := rt.StepSession(ctx, application.StepSessionCommand{
-			SessionID:         sessionID,
-			ConversationID:    conversationID,
-			OrchestrationMode: mode,
-			ReplyRoutingMode:  replyRouting,
-		})
-		if err != nil {
-			return attachErrMsg{err: err}
-		}
+		events := make(chan tea.Msg, 32)
+		go func() {
+			defer close(events)
+			stepCtx := codexadapter.WithReasoningReporter(ctx, func(event codexadapter.ReasoningEvent) {
+				msg := newAttachReasoningMsg(event)
+				if msg.agentID == "" || msg.text == "" {
+					return
+				}
+				select {
+				case events <- msg:
+				default:
+				}
+			})
+			step, err := rt.StepSession(stepCtx, application.StepSessionCommand{
+				SessionID:         sessionID,
+				ConversationID:    conversationID,
+				OrchestrationMode: mode,
+				ReplyRoutingMode:  replyRouting,
+			})
+			if err != nil {
+				events <- attachErrMsg{err: err}
+				return
+			}
+			state, err := loadAttachRoomState(ctx, rt, sessionID)
+			if err != nil {
+				events <- attachErrMsg{err: err}
+				return
+			}
+			events <- attachStepProgressMsg{state: state, step: step, remaining: remaining}
+		}()
+		return attachStepStreamStartedMsg{events: events}
+	}
+}
 
-		state, err := loadAttachRoomState(ctx, rt, sessionID)
-		if err != nil {
-			return attachErrMsg{err: err}
+func attachAwaitStepEventCmd(events <-chan tea.Msg) tea.Cmd {
+	return func() tea.Msg {
+		msg, ok := <-events
+		if !ok {
+			return nil
 		}
-		return attachStepProgressMsg{state: state, step: step, remaining: remaining}
+		return msg
 	}
 }
 

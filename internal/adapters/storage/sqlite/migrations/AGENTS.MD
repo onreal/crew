@@ -15,6 +15,7 @@ These migrations define the durable shape of runtime state. They protect restart
 - canonical tables for sessions, messages, workflows, agents, sandbox tasks, agent handoffs, outbox rows, and stream projections must stay explicit
 - agent-table migrations must preserve the distinction between the active operational catalog and historical agent rows needed for replay and foreign-key safety
 - additive migrations must preserve canonical agent provider/model identity without rewriting historical agent rows ad hoc
+- additive migrations must preserve canonical agent reasoning-effort identity alongside provider/model so shipped Codex-backed catalogs keep their intended execution profile after upgrade
 - additive migrations must also preserve canonical agent delegation-runtime and sandbox-root ownership without forcing rooms back onto one global sandbox runtime
 - session-table migrations must preserve canonical actor-catalog selection without collapsing it back into ephemeral CLI state
 - sandbox-task migrations must preserve assigned runtime names and sandbox-root overrides so restart-safe execution keeps using the same runtime and sandbox namespace
