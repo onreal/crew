@@ -34,6 +34,7 @@ Current operator prerequisites:
 - optionally consuming Codex JSONL progress events from stdout and stderr for transient TUI-only reasoning and non-final progress updates while still persisting only the final agent reply
 - when transient reasoning/progress reporting is enabled upstream, explicitly requesting detailed Codex reasoning summaries so the CLI emits readable summary events more consistently instead of only a final answer
 - normalizing both legacy reasoning-style JSONL payloads and newer Responses-style `response.reasoning_summary_*` delta events into the shared transient progress contract
+- emitting the same transient progress contract for delegated Codex sandbox-task execution, attributed to the owning agent recorded on the task, so writer-style implementation turns can surface reasoning in the room too
 - packaging changed files and subprocess metadata into `SandboxTaskExecutionResult`
 - advertising support for the named text provider `codex` and the named sandbox runtime `codex` inside the routed runtime catalogs
 - honoring any per-task sandbox-root override so different agents may isolate or share Codex sandboxes intentionally

@@ -252,11 +252,62 @@ func TestAttachModelReasoningStaysVisibleAfterStepCompletes(t *testing.T) {
 		remaining: 1,
 	})
 	next := updated.(attachModel)
-	if len(next.progressByAgent) == 0 {
-		t.Fatalf("expected reasoning to remain visible after step completion")
+	if len(next.progressByAgent) != 0 {
+		t.Fatalf("expected in-flight reasoning state to clear after commit, got %#v", next.progressByAgent)
+	}
+	if len(next.progressHistory) == 0 {
+		t.Fatalf("expected committed reasoning history after step completion")
 	}
 	if !strings.Contains(next.renderConversationContent("conversation-1"), "checking the workspace layout") {
 		t.Fatalf("expected reasoning to remain visible in conversation content, got:\n%s", next.renderConversationContent("conversation-1"))
+	}
+}
+
+func TestAttachModelReasoningHistoryKeepsAllCompletedTurns(t *testing.T) {
+	ui := platform.DefaultConfig().UI
+	model := newAttachModel(context.Background(), nil, liveViewOptions{SessionID: "session-1", Reasoning: true}, "conversation-1", ui)
+	model.agents = []domain.Agent{
+		testAttachAgent("planner", 100),
+		testAttachAgent("reviewer", 90),
+		testAttachAgent("writer", 80),
+	}
+	model.width, model.height = 120, 30
+	model.layout()
+
+	for _, step := range []struct {
+		agent string
+		text  string
+	}{
+		{agent: "planner", text: "planning the next steps"},
+		{agent: "reviewer", text: "reviewing the draft"},
+		{agent: "writer", text: "writing the final patch"},
+	} {
+		updated, _ := model.Update(attachProgressMsg{event: application.TransientProgressEvent{
+			Provider: "codex", AgentID: domain.AgentID(step.agent), Kind: "reasoning", Text: step.text,
+		}})
+		model = updated.(attachModel)
+		var steppedAgent *domain.Agent
+		for idx := range model.agents {
+			if model.agents[idx].ID == domain.AgentID(step.agent) {
+				steppedAgent = &model.agents[idx]
+				break
+			}
+		}
+		updated, _ = model.Update(attachStepProgressMsg{
+			state: attachRoomState{snapshot: runtimeadapter.SessionSnapshot{
+				Session: domain.Session{ID: "session-1", Mode: domain.SessionModeFree, Status: domain.SessionStatusRunning},
+			}, conversations: []domain.ConversationID{"conversation-1"}},
+			step:      application.SessionStepResult{Stepped: true, Agent: steppedAgent},
+			remaining: 1,
+		})
+		model = updated.(attachModel)
+	}
+
+	rendered := model.renderConversationContent("conversation-1")
+	for _, expected := range []string{"planning the next steps", "reviewing the draft", "writing the final patch"} {
+		if !strings.Contains(rendered, expected) {
+			t.Fatalf("expected committed reasoning history %q in conversation content, got:\n%s", expected, rendered)
+		}
 	}
 }
 

@@ -52,6 +52,7 @@ This directory defines how the product behaves when operators start sessions, se
 - sandboxed CLI runtimes must stay behind a separate application port from plain-text LLM generation
 - mixed-provider collaboration must be represented as persisted tasks and handoffs so agent-to-agent work stays auditable and replayable
 - when a text-generation port requests sandbox delegation, free-mode stepping must translate that into a persisted sandbox task, a persisted handoff, and persisted conversation messages describing task creation and completion/failure
+- delegated sandbox tasks must preserve the owning agent identity and any agent-scoped reasoning controls in canonical task state so runtime progress, audit, and replay can attribute sandbox execution back to the originating agent correctly
 - sandbox delegation must be explicitly allowed by agent policy and restricted to the runtimes listed in that agent's allowed sandbox-runtime set
 - free-mode sandbox delegation must resolve the runtime from canonical agent state rather than one process-global default, and any per-agent sandbox-root override must be persisted onto the resulting task
 - agent handoffs must reject task references that do not belong to the same session and conversation as the handoff record

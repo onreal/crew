@@ -61,7 +61,7 @@ func canGroupDisplayEvents(a, b attachDisplayEvent) bool {
 }
 
 func (m attachModel) displayEvents(conversationID domain.ConversationID) []attachDisplayEvent {
-	events := make([]attachDisplayEvent, 0, len(m.room.snapshot.Stream)+len(m.localNotices))
+	events := make([]attachDisplayEvent, 0, len(m.room.snapshot.Stream)+len(m.localNotices)+len(m.progressHistory)+len(m.progressByAgent))
 	replySummaryByID := buildReplySummaryIndex(m.room.snapshot.Messages)
 	for _, entry := range m.room.snapshot.Stream {
 		event, ok := m.streamEntryToDisplayEvent(entry, conversationID, replySummaryByID)
@@ -76,6 +76,12 @@ func (m attachModel) displayEvents(conversationID domain.ConversationID) []attac
 		events = append(events, notice)
 	}
 	if m.options.Reasoning {
+		for _, event := range m.progressHistory {
+			if conversationID != "" && event.ConversationID != "" && event.ConversationID != conversationID {
+				continue
+			}
+			events = append(events, event)
+		}
 		events = append(events, m.reasoningDisplayEvents(conversationID)...)
 	}
 	return events

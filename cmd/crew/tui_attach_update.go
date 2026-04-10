@@ -65,6 +65,7 @@ func (m attachModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.ensureActiveConversation()
 		m.lastError = ""
 		hadReasoning := len(m.progressByAgent) > 0
+		m.commitProgressHistory()
 		if typed.remaining > 1 && typed.step.Stepped {
 			m.pendingOps = 1
 			m.setPendingSequence(typed.remaining - 1)
@@ -78,9 +79,7 @@ func (m attachModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.pendingOps = 0
 		clear(m.pendingAgentStates)
-		if !m.options.Reasoning {
-			clear(m.progressByAgent)
-		}
+		clear(m.progressByAgent)
 		m.status = fmt.Sprintf("step=%t reason=%s", typed.step.Stepped, typed.step.Reason)
 		if typed.step.Agent != nil {
 			m.status = fmt.Sprintf("step agent=%s", typed.step.Agent.ID)

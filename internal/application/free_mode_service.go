@@ -345,6 +345,7 @@ func (s *FreeModeService) maybeDelegateSandboxTask(ctx context.Context, agent *d
 		SessionID:          message.SessionID,
 		ConversationID:     message.ConversationID,
 		RequestedByAgentID: agent.ID,
+		AssignedAgentID:    agent.ID,
 		AssignedProvider:   AgentProviderClassSandboxedRuntime,
 		RuntimeName:        runtimeName,
 		WorkspaceRoot:      s.sourceWorkspaceRoot,
@@ -354,6 +355,7 @@ func (s *FreeModeService) maybeDelegateSandboxTask(ctx context.Context, agent *d
 		Metadata: map[string]any{
 			"requested_from_message_id": string(message.ID),
 			"requested_by_agent_id":     string(agent.ID),
+			"reasoning_effort":          strings.TrimSpace(agent.ReasoningEffort),
 			"delegation_runtime":        runtimeName,
 			"sandbox_workspace_mode":    strings.TrimSpace(agent.SandboxWorkspaceMode),
 		},

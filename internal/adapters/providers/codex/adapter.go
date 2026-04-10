@@ -11,6 +11,7 @@ import (
 
 	"crew/internal/adapters/sandbox"
 	"crew/internal/application"
+	"crew/internal/domain"
 )
 
 type Config struct {
@@ -98,6 +99,13 @@ func (r *Runtime) ExecuteTask(ctx context.Context, task application.SandboxTask)
 		"--json",
 		"--output-last-message", outputPath,
 	}
+	progressSink := newJSONLProgressSink(taskProgressAgentID(task), application.TransientProgressReporterFromContext(ctx))
+	if progressSink != nil {
+		args = append(args, "-c", `model_reasoning_summary="detailed"`)
+	}
+	if effort := strings.TrimSpace(metadataString(task.Metadata, "reasoning_effort")); effort != "" {
+		args = append(args, "-c", fmt.Sprintf("model_reasoning_effort=%q", effort))
+	}
 	if r.model != "" {
 		args = append(args, "--model", r.model)
 	}
@@ -109,12 +117,18 @@ func (r *Runtime) ExecuteTask(ctx context.Context, task application.SandboxTask)
 	}
 	args = append(args, task.Instruction)
 
-	commandResult, execErr := sandbox.RunCommand(ctx, sandbox.CommandRequest{
+	request := sandbox.CommandRequest{
 		BinaryPath: r.binaryPath,
 		Args:       args,
 		Dir:        workspace.ExecutionRoot,
 		Timeout:    r.timeout,
-	})
+	}
+	if progressSink != nil {
+		request.StdoutSink = progressSink
+		request.StderrSink = progressSink
+	}
+
+	commandResult, execErr := sandbox.RunCommand(ctx, request)
 
 	artifacts, artifactErr := workspace.ChangedArtifacts()
 	if artifactErr != nil {
@@ -159,6 +173,13 @@ func (r *Runtime) ExecuteTask(ctx context.Context, task application.SandboxTask)
 	}
 
 	return result, nil
+}
+
+func taskProgressAgentID(task application.SandboxTask) domain.AgentID {
+	if task.AssignedAgentID != "" {
+		return task.AssignedAgentID
+	}
+	return task.RequestedByAgentID
 }
 
 func codexSandboxMode(profile application.SandboxPermissionProfile) string {

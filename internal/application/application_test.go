@@ -964,6 +964,9 @@ func TestFreeModeServiceStepDelegatesSandboxTaskAndPersistsResultMessages(t *tes
 	if result.SandboxTask == nil || result.SandboxTask.Status != SandboxTaskStatusSucceeded {
 		t.Fatalf("expected succeeded sandbox task in step result, got %+v", result.SandboxTask)
 	}
+	if result.SandboxTask.AssignedAgentID != "planner" {
+		t.Fatalf("expected delegated sandbox task to stay assigned to planner, got %+v", result.SandboxTask)
+	}
 	if result.SandboxTask.RuntimeName != "codex" {
 		t.Fatalf("expected planner to delegate to codex runtime, got %+v", result.SandboxTask)
 	}

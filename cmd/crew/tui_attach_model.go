@@ -52,6 +52,7 @@ type attachModel struct {
 	pendingOps           int
 	pendingAgentStates   map[domain.AgentID]string
 	progressByAgent      map[domain.AgentID]application.TransientProgressEvent
+	progressHistory      []attachDisplayEvent
 	activeStepEvents     <-chan tea.Msg
 	spinnerFrame         int
 	printedStreamCount   int

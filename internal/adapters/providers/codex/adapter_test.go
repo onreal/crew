@@ -137,6 +137,73 @@ sleep 2
 	}
 }
 
+func TestRuntimeExecuteTaskStreamsReasoningProgress(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	sourceRoot := filepath.Join(root, "source")
+	sandboxRoot := filepath.Join(root, "sandboxes")
+	if err := os.MkdirAll(sourceRoot, 0o755); err != nil {
+		t.Fatalf("MkdirAll(sourceRoot) error = %v", err)
+	}
+
+	binaryPath := writeFakeCodexScript(t, root, `#!/bin/sh
+OUTPUT=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --output-last-message)
+      OUTPUT="$2"
+      shift 2
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+printf '{"type":"response.reasoning_summary_text.delta","delta":"Writing"}\n' >&2
+printf '{"type":"response.reasoning_summary_text.delta","delta":" the patch"}\n' >&2
+printf 'task complete' > "$OUTPUT"
+`)
+
+	runtime, err := New(Config{
+		BinaryPath:  binaryPath,
+		SandboxRoot: sandboxRoot,
+		Timeout:     5 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	var events []application.TransientProgressEvent
+	ctx := application.WithTransientProgressReporter(context.Background(), func(event application.TransientProgressEvent) {
+		events = append(events, event)
+	})
+	_, err = runtime.ExecuteTask(ctx, application.SandboxTask{
+		ID:                "task-1",
+		SessionID:         "session-1",
+		ConversationID:    "conversation-1",
+		RequestedByAgentID:"writer",
+		AssignedAgentID:   "writer",
+		AssignedProvider:  application.AgentProviderClassSandboxedRuntime,
+		RuntimeName:       "codex",
+		WorkspaceRoot:     sourceRoot,
+		PermissionProfile: application.SandboxPermissionPatch,
+		Instruction:       "update notes",
+		Metadata:          map[string]any{"reasoning_effort": "medium"},
+		Status:            application.SandboxTaskStatusPending,
+		CreatedAt:         time.Date(2026, 3, 20, 10, 0, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("ExecuteTask() error = %v", err)
+	}
+	if len(events) != 2 {
+		t.Fatalf("expected streamed progress events, got %+v", events)
+	}
+	if events[len(events)-1].AgentID != "writer" || events[len(events)-1].Text != "Writing the patch" {
+		t.Fatalf("expected writer reasoning progress, got %+v", events)
+	}
+}
+
 func TestRuntimeExecuteTaskUsesTaskSandboxRootOverride(t *testing.T) {
 	t.Parallel()
 
