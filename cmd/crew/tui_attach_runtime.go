@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"time"
@@ -9,7 +10,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"golang.org/x/term"
 
-	codexadapter "crew/internal/adapters/providers/codex"
 	runtimeadapter "crew/internal/adapters/runtime"
 	"crew/internal/application"
 	"crew/internal/domain"
@@ -17,7 +17,11 @@ import (
 
 func (s *runtimeState) runTUISessionView(ctx context.Context, in io.Reader, out io.Writer, options liveViewOptions) error {
 	if !supportsFullScreenTUI(in, out) {
-		return s.runInteractiveSessionView(ctx, in, out, options)
+		err := s.runInteractiveSessionView(ctx, in, out, options)
+		if err == nil {
+			return printAttachResumeHint(out, options)
+		}
+		return err
 	}
 
 	if options.PollInterval <= 0 {
@@ -46,14 +50,38 @@ func (s *runtimeState) runTUISessionView(ctx context.Context, in io.Reader, out 
 		model.clipboard = newAttachClipboard(out)
 		program := tea.NewProgram(
 			model,
-			tea.WithAltScreen(),
 			tea.WithInput(in),
 			tea.WithOutput(out),
 		)
 		_, err = program.Run()
+		if err == nil {
+			return nil, printAttachResumeHint(out, options)
+		}
 		return nil, err
 	})
 	return err
+}
+
+func printAttachResumeHint(out io.Writer, options liveViewOptions) error {
+	if !options.Follow {
+		return nil
+	}
+	_, err := fmt.Fprintf(out, "\nTo resume this session: %s\n", attachResumeCommand(options))
+	return err
+}
+
+func attachResumeCommand(options liveViewOptions) string {
+	command := fmt.Sprintf("crew tui attach --session-id %s", options.SessionID)
+	if options.ConversationID != "" {
+		command += " --conversation-id " + string(options.ConversationID)
+	}
+	if options.Debug {
+		command += " --debug"
+	}
+	if options.Reasoning {
+		command += " --reasoning"
+	}
+	return command
 }
 
 func supportsFullScreenTUI(in io.Reader, out io.Writer) bool {
@@ -165,9 +193,9 @@ func attachRunStepCmd(
 		events := make(chan tea.Msg, 32)
 		go func() {
 			defer close(events)
-			stepCtx := codexadapter.WithReasoningReporter(ctx, func(event codexadapter.ReasoningEvent) {
-				msg := newAttachReasoningMsg(event)
-				if msg.agentID == "" || msg.text == "" {
+			stepCtx := application.WithTransientProgressReporter(ctx, func(event application.TransientProgressEvent) {
+				msg := newAttachProgressMsg(event)
+				if msg.event.AgentID == "" || msg.event.Text == "" {
 					return
 				}
 				select {

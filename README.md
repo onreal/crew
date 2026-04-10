@@ -39,7 +39,7 @@ You can currently:
 - start a free session and enter the live chat room immediately when running on a real terminal
 - keep the attached room as one continuous full-session timeline; `tui attach --conversation-id` only changes the initial send target, not what the room shows
 - watch the persisted session stream as a live terminal view with `session tail` or `tui attach`
-- see transient Codex reasoning/progress in `tui attach` while a turn is still running, including a dedicated reasoning pane once real progress arrives, without mixing that output into the persisted conversation transcript
+- see transient provider progress in `tui attach` while a turn is still running, without mixing that output into the persisted conversation transcript
 - keep working with the same session across separate CLI invocations
 - inspect the persisted session event stream
 - inspect vector backend/index state
@@ -323,11 +323,9 @@ runtime:
 ui:
   refresh_interval_millis: 250
   attach_auto_steps: 1
-  attach_split_panes: true
   theme: sunrise
   show_timestamps: true
   compact_messages: false
-  attach_sidebar: true
   agent_colors:
     operator: "#f97316"
     planner: "#fb7185"
@@ -379,12 +377,10 @@ Notes:
 - `vector.embedder` is currently `local_stub` only
 - `runtime.state_path` is deprecated compatibility config from the old JSON bridge and is not used by live session commands
 - `ui.attach_auto_steps` controls how many free-mode turns `tui attach` runs automatically after each operator message; set it higher than `1` for more conversational multi-agent rooms
-- `ui.attach_split_panes` controls whether the full-screen room may split into active and preview conversation panes when multiple conversations exist
-- `ui.theme` controls the full-screen attach palette; supported values are `sunrise` and `graphite`
-- `ui.show_timestamps` toggles timestamps in the full-screen room
+- `ui.theme` controls the interactive attach palette; supported values are `sunrise` and `graphite`
+- `ui.show_timestamps` toggles timestamps when `tui attach --debug` is enabled; normal room mode keeps transcript headers minimal
 - `ui.compact_messages` switches the room feed between denser and more spaced message rendering
-- `ui.attach_sidebar` toggles the compact participant/status strip rendered below the full-width chat room
-- `ui.agent_colors` lets you override sender colors in the full-screen room by agent ID
+- `ui.agent_colors` lets you override sender colors in the interactive room by agent ID
 
 Environment variable examples:
 
@@ -1013,7 +1009,7 @@ Top-level commands:
 - `crew session recall --session-id <id> --query <text> [--limit N]`
 - `crew vector status [--session-id <id>]`
 - `crew vector rebuild [--session-id <id>] [--force]`
-- `crew tui attach --session-id <id> [--conversation-id <id>] [--follow=false] [--poll-interval-millis <n>] [--auto-steps <n>] [--orchestration deterministic|round_robin|mentioned_first] [--reply-routing latest_speaker|reply_obligations]`
+- `crew tui attach --session-id <id> [--conversation-id <id>] [--follow=false] [--poll-interval-millis <n>] [--auto-steps <n>] [--orchestration deterministic|round_robin|mentioned_first] [--reply-routing latest_speaker|reply_obligations] [--debug] [--reasoning]`
 
 ### `version`
 
@@ -1290,7 +1286,7 @@ Runtime selection:
 
 ### `tui attach`
 
-Attach a full-screen interactive session room in the terminal.
+Attach an interactive session room in the terminal.
 
 ```bash
 go run ./cmd/crew tui attach --session-id session-1
@@ -1298,21 +1294,26 @@ go run ./cmd/crew tui attach --session-id session-1 --conversation-id conversati
 go run ./cmd/crew tui attach --session-id session-1 --follow=false
 go run ./cmd/crew tui attach --session-id session-1 --auto-steps 3 --orchestration round_robin
 go run ./cmd/crew tui attach --session-id session-1 --auto-steps 3 --reply-routing latest_speaker
+go run ./cmd/crew tui attach --session-id session-1 --debug
+go run ./cmd/crew tui attach --session-id session-1 --reasoning
 ```
 
-`tui attach` now opens a full-screen Bubble Tea room on a real TTY. It uses the same persisted session stream as `session tail`, but adds styled conversation rendering, a bottom input box, keyboard shortcuts, and a compact participant/status strip below the chat instead of reserving a right-hand sidebar. When stdin/stdout are not real terminal devices, it falls back to the earlier line-oriented attach mode so tests and scripted use still work.
+`tui attach` now opens a borderless interactive Bubble Tea room on a real TTY. It keeps the managed UI pinned to the bottom of the terminal, keeps the latest transcript tail visible inside the room itself, and uses a larger padded compose area plus compact room chrome below the compose box instead of hiding history behind an internal chat viewport. When stdin/stdout are not real terminal devices, it falls back to the earlier line-oriented attach mode so tests and scripted use still work.
 
 This is also the room that `session start --mode free` opens automatically on a real terminal for a brand-new session. `tui attach` remains the explicit reattach path for existing sessions.
+
+If you prefer the auto-opened room from `session start --mode free` to show inline live reasoning too, use `session start --mode free --reasoning`.
 
 Interactive behavior:
 
 - plain text sends a user message into the attached conversation
-- when attach is not pinned with `--conversation-id`, the main room now shows the whole session timeline instead of only one conversation, so older session history remains reachable by scrolling
+- when attach is not pinned with `--conversation-id`, the main room shows the whole session timeline instead of only one conversation
 - typing `/` in the input box now shows the available in-room commands and lets you accept one into the input with `Tab` or `Enter`
 - typing `@` now shows the available agent recipients and lets you target one or more agents in the same prompt; those mentions are persisted as canonical direct recipients
 - when one prompt targets multiple agents, the attached room now auto-runs enough turns for each mentioned recipient to answer once before ordinary room orchestration resumes
 - operator messages now render in the room immediately instead of waiting for the bounded auto-run to finish
-- the active room pane now snaps to the conversation you just sent into, so new operator messages and follow-up agent replies do not appear hidden in another pane
+- the active send target now stays aligned with the conversation you just sent into, so new operator messages and follow-up agent replies do not appear hidden
+- the compose box now uses a normal placeholder: `Type a message or /help` appears only while the input is empty and disappears as soon as you type
 - `/step` executes one free-mode turn
 - `/auto 3` executes a bounded multi-turn run
 - `/help` prints the attach commands
@@ -1322,30 +1323,28 @@ Interactive behavior:
 - `--reply-routing latest_speaker|reply_obligations` overrides `session.reply_routing_mode` for the attached room without changing orchestration
 - `--orchestration round_robin` is the most practical current setting if you want several agents to respond in sequence instead of the highest-priority agent replying first
 - round-robin now advances across the full configured agent roster even when the previous speaker is temporarily blocked by `max_consecutive_turns`, so shared-room auto runs do not bounce between only two agents
-- `Ctrl+C` or `Esc` exits the full-screen room
+- `Ctrl+C` or `Esc` exits the interactive room
+- when you exit the room, `crew` now prints `To resume this session: ...` with the exact reattach command for that session
 - `Ctrl+L` refreshes the room snapshot immediately
-- `Ctrl+Y` copies the current visible TUI snapshot, including the room, compact status strip, and any visible preview pane
+- `Ctrl+Y` copies the current visible transcript snapshot
 - normal terminal mouse selection is enabled again, so you can highlight visible TUI text and copy it with your terminal's usual copy gesture
 - `Up` and `Down` navigate input history when no assist is open, or move through `/` and `@` suggestions when an assist is open
-- `PgUp` and `PgDn` scroll the room viewport
-- `Home` and `End` jump to the top or bottom of the room
 - `[` and `]` switch the active conversation when the room is not pinned to one conversation
-- `Tab` accepts the active `/` or `@` suggestion; when no assist is open it still toggles split conversation panes when multiple conversations are present
+- `Tab` accepts the active `/` or `@` suggestion
 - `Ctrl+D` shows recent inputs in the status line
-- `ui.attach_sidebar` controls whether the room shows the compact participant/status strip below the chat viewport
-- `ui.attach_split_panes` controls whether the room can show active plus preview conversation panes
 - `ui.show_timestamps`, `ui.compact_messages`, and `ui.agent_colors` control the room presentation
-- the room now uses a fixed-height shell for header, chat viewport, input, and footer, so typing and live status updates do not make the chatboard jump
+- the latest transcript tail stays visible inside the room without a viewport-owned chat pane
 - background free-mode step/auto work no longer blocks the whole room; agent replies continue to arrive through the persisted stream while the operator keeps control of the UI
 - messages from the same sender are grouped together in the room to reduce chatter
-- pending agent activity now renders in the room header as lightweight `thinking` and `queued` status, so live runs stay visible without pushing real messages out of the chat backlog
+- `--reasoning` shows normalized transient live provider progress inline in the chat body while a turn is running, including reasoning-style summaries when the active provider exposes them; for Codex-backed turns the adapter explicitly requests detailed reasoning summaries so newer JSON delta events surface more consistently in the room, and this remains a room-only view rather than persisted session history
+- pending send, agent, and sandbox activity now renders below the compose box as room chrome instead of appearing as fake in-progress transcript messages
 - reply messages now show a short `in reply to ...` preview when the upstream message is available in the current session snapshot
-- provider/runtime failures in the attached room now also appear as local system notices in the conversation instead of only in the header state
-- the room now stays full-width even when participant status is enabled; no right-hand sidebar space is reserved
-- on wide terminals, the input row now reserves a decorative right-side ASCII panel at roughly 20% width, showing `NOSTATE` and `CREW CLI`; on narrower terminals that panel disappears entirely while the conversation viewport stays full width
-- the compact status strip now keeps only total persisted message count plus every configured participant with that participant's message count
+- transcript metadata such as timestamps, conversation IDs, and reply target message IDs now stays hidden in the normal room feed and is only shown with `--debug`
+- provider/runtime failures in the attached room stay visible through room status instead of being duplicated as ordinary conversation lines
+- the compact status strip now keeps only total persisted message count plus every configured participant with that participant's message count, and it appears once below the compose area instead of reading like transcript content
 - participant names in the compact strip shrink with ellipsis as the terminal narrows so the full participant roster stays visible
-- room and preview panes now use flat borders rather than rounded corners so the layout remains dense and predictable in terminal grids
+- the room is intentionally borderless to keep the transcript closer to Codex CLI and to avoid wasting terminal rows on pane chrome
+- when a room is still empty, the transcript area now shows the `CREW CLI` / `NOSTATE` artwork before the first visible message arrives
 
 ## Full Operational Walkthrough
 
@@ -1594,7 +1593,7 @@ An isolated optional Phase 5B adapter also exists under `internal/adapters/stora
 - free-mode orchestration is now configurable, but it still selects only one agent per step
 - provider-backed generation requires the selected agent to name a configured external provider and for that provider to have valid credentials
 - sandbox task commands exist, but sandboxed agent orchestration is still limited to the current persisted task/handoff flow rather than a richer autonomous tool-use loop
-- `tui attach` is now full-screen only on real TTYs; non-terminal piping and test harnesses still use the fallback line-oriented attach path
+- `tui attach` is interactive only on real TTYs; non-terminal piping and test harnesses still use the fallback line-oriented attach path
 - true nearest-neighbor vector search still requires the optional `sqlite-vec` build path and dependency activation
 - sequential mode is still a lifecycle/workflow shell rather than a full execution engine
 - `runtime.state_path` remains in config only as deprecated compatibility baggage

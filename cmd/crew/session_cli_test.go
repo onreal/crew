@@ -638,6 +638,9 @@ func TestSessionStartFreeAutoAttachesImmediately(t *testing.T) {
 	if !strings.Contains(output, "attached to session session-1") {
 		t.Fatalf("expected auto-attach header, got %q", output)
 	}
+	if !strings.Contains(output, "To resume this session: crew tui attach --session-id session-1") {
+		t.Fatalf("expected auto-attach exit hint, got %q", output)
+	}
 	if !strings.Contains(output, "reviewer (reply_to=") {
 		t.Fatalf("expected attached room to use persisted selected actors catalog, got %q", output)
 	}
@@ -685,6 +688,9 @@ func TestTUIAttachAcceptsInteractiveInput(t *testing.T) {
 	}
 	if !strings.Contains(output, "Planner (planner): plan the next step") {
 		t.Fatalf("expected attach output to include planner reply, got %q", output)
+	}
+	if !strings.Contains(output, "To resume this session: crew tui attach --session-id "+sessionID+" --conversation-id conversation-1") {
+		t.Fatalf("expected attach exit hint, got %q", output)
 	}
 	if strings.Count(output, "planner (reply_to=") != 1 {
 		t.Fatalf("expected exactly one planner reply from the default roster, got %q", output)

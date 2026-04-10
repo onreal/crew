@@ -24,6 +24,8 @@ type liveViewOptions struct {
 	AutoSteps      int
 	Orchestration  application.OrchestrationMode
 	ReplyRouting   application.ReplyRoutingMode
+	Debug          bool
+	Reasoning      bool
 }
 
 func (s *runtimeState) runLiveSessionView(ctx context.Context, out io.Writer, options liveViewOptions) error {

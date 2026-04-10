@@ -47,6 +47,7 @@ func RunCommand(parent context.Context, request CommandRequest) (CommandResult, 
 
 	cmd := exec.CommandContext(ctx, request.BinaryPath, request.Args...)
 	cmd.Dir = request.Dir
+	cmd.Stdin = strings.NewReader("")
 	if len(request.Env) > 0 {
 		cmd.Env = append([]string(nil), request.Env...)
 	}

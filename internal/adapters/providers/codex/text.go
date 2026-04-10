@@ -67,9 +67,10 @@ func (p *TextProvider) Generate(ctx context.Context, request application.Generat
 		"--cd", p.workingDirectory,
 		"--model", strings.TrimSpace(request.Agent.Model),
 	}
-	progressSink := newJSONLReasoningSink(string(request.Agent.ID), reasoningReporterFromContext(ctx))
+	progressSink := newJSONLProgressSink(request.Agent.ID, application.TransientProgressReporterFromContext(ctx))
 	if progressSink != nil {
 		args = append(args, "--json")
+		args = append(args, "-c", `model_reasoning_summary="detailed"`)
 	}
 	if effort := strings.TrimSpace(request.Agent.ReasoningEffort); effort != "" {
 		args = append(args, "-c", fmt.Sprintf("model_reasoning_effort=%q", effort))

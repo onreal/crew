@@ -35,24 +35,26 @@ func (m attachModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.pendingOps = 1
 			m.setPendingSequence(typed.autoSteps)
 			m.status = fmt.Sprintf("operator message sent, auto running %d turn(s)", typed.autoSteps)
-			m.syncViewportContent(true)
+			m.syncViewportContent(false)
 			return m, attachContinueAutoTickCmd(typed.autoSteps)
 		}
-		m.syncViewportContent(true)
+		m.syncViewportContent(false)
 		return m, nil
 	case attachStepStreamStartedMsg:
 		m.activeStepEvents = typed.events
-		m.layout()
-		m.syncViewportContent(false)
 		return m, attachAwaitStepEventCmd(typed.events)
-	case attachReasoningMsg:
-		if typed.agentID != "" && typed.text != "" {
-			m.pendingAgentStates[typed.agentID] = "reasoning"
-			m.reasoningByAgent[typed.agentID] = typed.text
-			m.status = string(typed.agentID) + " is reasoning"
+	case attachProgressMsg:
+		if typed.event.AgentID != "" && typed.event.Text != "" {
+			m.pendingAgentStates[typed.event.AgentID] = typed.event.Kind
+			if strings.TrimSpace(typed.event.Kind) == "" {
+				m.pendingAgentStates[typed.event.AgentID] = "progress"
+			}
+			m.progressByAgent[typed.event.AgentID] = typed.event
+			m.status = string(typed.event.AgentID) + " is " + displayProgressKind(typed.event.Kind)
+			if m.options.Reasoning {
+				m.syncViewportContent(false)
+			}
 		}
-		m.layout()
-		m.syncViewportContent(false)
 		if m.activeStepEvents != nil {
 			return m, attachAwaitStepEventCmd(m.activeStepEvents)
 		}
@@ -62,7 +64,7 @@ func (m attachModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.room = typed.state
 		m.ensureActiveConversation()
 		m.lastError = ""
-		hadReasoning := len(m.reasoningByAgent) > 0
+		hadReasoning := len(m.progressByAgent) > 0
 		if typed.remaining > 1 && typed.step.Stepped {
 			m.pendingOps = 1
 			m.setPendingSequence(typed.remaining - 1)
@@ -71,12 +73,14 @@ func (m attachModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				m.status = fmt.Sprintf("continuing auto run (%d left)", typed.remaining-1)
 			}
-			m.syncViewportContent(true)
+			m.syncViewportContent(false)
 			return m, attachContinueAutoTickCmd(typed.remaining - 1)
 		}
 		m.pendingOps = 0
 		clear(m.pendingAgentStates)
-		clear(m.reasoningByAgent)
+		if !m.options.Reasoning {
+			clear(m.progressByAgent)
+		}
 		m.status = fmt.Sprintf("step=%t reason=%s", typed.step.Stepped, typed.step.Reason)
 		if typed.step.Agent != nil {
 			m.status = fmt.Sprintf("step agent=%s", typed.step.Agent.ID)
@@ -87,25 +91,19 @@ func (m attachModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if !typed.step.Stepped && typed.step.Reason != "" {
 			m.status = fmt.Sprintf("stopped: %s", typed.step.Reason)
 		}
-		m.layout()
-		m.syncViewportContent(true)
+		m.syncViewportContent(false)
 		return m, nil
 	case attachErrMsg:
 		m.activeStepEvents = nil
 		m.pendingOps = 0
 		clear(m.pendingAgentStates)
-		clear(m.reasoningByAgent)
+		clear(m.progressByAgent)
 		m.lastError = typed.err.Error()
-		m.appendLocalNotice(attachDisplayEvent{
-			Kind:           "system",
-			RecordedAt:     time.Now().UTC(),
-			ConversationID: m.sendConversationID,
-			Body:           "room error: " + typed.err.Error(),
-		})
-		m.layout()
-		m.syncViewportContent(true)
+		m.status = "room error"
+		m.syncViewportContent(false)
 		return m, nil
 	case attachTickMsg:
+		m.spinnerFrame++
 		return m, tea.Batch(
 			attachFetchRoomStateCmd(m.ctx, m.rt, m.options.SessionID),
 			attachTickCmd(m.options.PollInterval),
@@ -120,12 +118,10 @@ func (m attachModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	}
 
-	var cmd, vpCmd tea.Cmd
-	m.viewport, vpCmd = m.viewport.Update(msg)
-	m.stickyBottom = m.viewport.AtBottom()
+	var cmd tea.Cmd
 	m.input, cmd = m.input.Update(msg)
 	m.refreshInputAssist()
-	return m, tea.Batch(vpCmd, cmd)
+	return m, cmd
 }
 
 func (m *attachModel) handleKeyMsg(msg tea.KeyMsg) (bool, tea.Cmd) {
@@ -160,22 +156,6 @@ func (m *attachModel) handleKeyMsg(msg tea.KeyMsg) (bool, tea.Cmd) {
 			return true, nil
 		}
 		m.historyDown()
-		return true, nil
-	case "pgup":
-		m.viewport.HalfViewUp()
-		m.stickyBottom = m.viewport.AtBottom()
-		return true, nil
-	case "pgdown":
-		m.viewport.HalfViewDown()
-		m.stickyBottom = m.viewport.AtBottom()
-		return true, nil
-	case "home":
-		m.viewport.GotoTop()
-		m.stickyBottom = false
-		return true, nil
-	case "end":
-		m.viewport.GotoBottom()
-		m.stickyBottom = true
 		return true, nil
 	case "ctrl+u":
 		m.input.SetValue("")
@@ -216,8 +196,6 @@ func (m *attachModel) submitInput(value string) tea.Cmd {
 	request := m.newAttachDispatchRequest(value)
 	channel, _ := attachDispatchRouting(request.ToAgentIDs)
 	effectiveAutoSteps := effectiveAttachAutoSteps(m.options.AutoSteps, request.ToAgentIDs)
-	m.selectedConvID = m.sendConversationID
-	m.stickyBottom = true
 	if effectiveAutoSteps > 0 {
 		history := append(
 			append([]domain.Message(nil), activeConversationMessages(m.room.snapshot.Messages, m.sendConversationID)...),
@@ -256,7 +234,7 @@ func (m *attachModel) submitInput(value string) tea.Cmd {
 	if effectiveAutoSteps > 0 {
 		m.status = fmt.Sprintf("%s, auto queued for %d turn(s)", m.status, effectiveAutoSteps)
 	}
-	m.syncViewportContent(true)
+	m.syncViewportContent(false)
 	return attachBeginDispatchTickCmd(request, effectiveAutoSteps)
 }
 
@@ -279,11 +257,10 @@ func (m *attachModel) handleCommand(raw string) tea.Cmd {
 		m.status = interactiveHelpText(m.options.AutoSteps)
 		return nil
 	case "/step":
-		m.stickyBottom = true
 		m.pendingOps = 1
 		m.setPendingSequence(1)
 		m.status = "running one agent turn..."
-		m.syncViewportContent(true)
+		m.syncViewportContent(false)
 		return attachRunStepCmd(m.ctx, m.rt, m.options.SessionID, m.sendConversationID, m.options.Orchestration, m.options.ReplyRouting, 1)
 	case "/auto":
 		maxSteps := 3
@@ -296,11 +273,10 @@ func (m *attachModel) handleCommand(raw string) tea.Cmd {
 			}
 			maxSteps = value
 		}
-		m.stickyBottom = true
 		m.pendingOps = 1
 		m.setPendingSequence(maxSteps)
 		m.status = fmt.Sprintf("running auto for %d turn(s)...", maxSteps)
-		m.syncViewportContent(true)
+		m.syncViewportContent(false)
 		return attachRunStepCmd(m.ctx, m.rt, m.options.SessionID, m.sendConversationID, m.options.Orchestration, m.options.ReplyRouting, maxSteps)
 	default:
 		return func() tea.Msg {

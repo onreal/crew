@@ -19,10 +19,18 @@ func (m attachModel) renderConversationContent(conversationID domain.Conversatio
 	if len(events) == 0 {
 		return m.styles.muted.Render("No messages yet. Type below to begin.")
 	}
+	return m.renderDisplayEvents(events)
+}
 
+func (m attachModel) renderDisplayEvents(events []attachDisplayEvent) string {
 	blocks := make([]string, 0, len(events))
 	for idx := 0; idx < len(events); {
 		event := events[idx]
+		if event.Kind == "reasoning" {
+			blocks = append(blocks, m.renderReasoningBlock(event))
+			idx++
+			continue
+		}
 		if event.Kind != "message" {
 			blocks = append(blocks, m.renderNonMessageBlock(event))
 			idx++
@@ -53,7 +61,7 @@ func canGroupDisplayEvents(a, b attachDisplayEvent) bool {
 }
 
 func (m attachModel) displayEvents(conversationID domain.ConversationID) []attachDisplayEvent {
-	events := make([]attachDisplayEvent, 0, len(m.room.snapshot.Stream)+len(m.optimistic)+len(m.localNotices))
+	events := make([]attachDisplayEvent, 0, len(m.room.snapshot.Stream)+len(m.localNotices))
 	replySummaryByID := buildReplySummaryIndex(m.room.snapshot.Messages)
 	for _, entry := range m.room.snapshot.Stream {
 		event, ok := m.streamEntryToDisplayEvent(entry, conversationID, replySummaryByID)
@@ -61,27 +69,15 @@ func (m attachModel) displayEvents(conversationID domain.ConversationID) []attac
 			events = append(events, event)
 		}
 	}
-	for _, pending := range m.optimistic {
-		if conversationID != "" && pending.ConversationID != conversationID {
-			continue
-		}
-		events = append(events, attachDisplayEvent{
-			Kind:           "message",
-			RecordedAt:     pending.SubmittedAt,
-			ConversationID: pending.ConversationID,
-			Sender:         pending.Sender,
-			Body:           pending.Body,
-			ToAgentIDs:     append([]domain.AgentID(nil), pending.ToAgentIDs...),
-			Pending:        true,
-		})
-	}
 	for _, notice := range m.localNotices {
 		if conversationID != "" && notice.ConversationID != "" && notice.ConversationID != conversationID {
 			continue
 		}
 		events = append(events, notice)
 	}
-	events = append(events, m.activeTaskDisplayEvents(conversationID)...)
+	if m.options.Reasoning {
+		events = append(events, m.reasoningDisplayEvents(conversationID)...)
+	}
 	return events
 }
 
@@ -109,8 +105,14 @@ func (m attachModel) streamEntryToDisplayEvent(
 ) (attachDisplayEvent, bool) {
 	switch event := entry.Payload.(type) {
 	case application.SessionCreatedEvent:
+		if !m.options.Debug {
+			return attachDisplayEvent{}, false
+		}
 		return attachDisplayEvent{Kind: "system", RecordedAt: entry.RecordedAt, Body: fmt.Sprintf("session created mode=%s status=%s", event.Session.Mode, event.Session.Status)}, true
 	case application.SessionUpdatedEvent:
+		if !m.options.Debug {
+			return attachDisplayEvent{}, false
+		}
 		return attachDisplayEvent{Kind: "system", RecordedAt: entry.RecordedAt, Body: fmt.Sprintf("session updated status=%s", event.Session.Status)}, true
 	case application.MessageDispatchedEvent:
 		if conversationID != "" && event.Message.ConversationID != conversationID {
@@ -160,7 +162,7 @@ func senderNameForMessage(message domain.Message) string {
 
 func (m attachModel) renderNonMessageBlock(event attachDisplayEvent) string {
 	prefix := ""
-	if m.ui.ShowTimestamps {
+	if m.options.Debug && m.ui.ShowTimestamps {
 		prefix = m.styles.muted.Render(event.RecordedAt.UTC().Format("15:04:05")) + " "
 	}
 	switch event.Kind {
@@ -173,10 +175,66 @@ func (m attachModel) renderNonMessageBlock(event attachDisplayEvent) string {
 	}
 }
 
+func (m attachModel) reasoningDisplayEvents(conversationID domain.ConversationID) []attachDisplayEvent {
+	if len(m.progressByAgent) == 0 {
+		return nil
+	}
+
+	events := make([]attachDisplayEvent, 0, len(m.progressByAgent))
+	for _, agent := range m.agents {
+		progress, ok := m.progressByAgent[agent.ID]
+		if !ok || strings.TrimSpace(progress.Text) == "" {
+			continue
+		}
+		event := attachDisplayEvent{
+			Kind:           "reasoning",
+			RecordedAt:     progressTimestamp(progress),
+			ConversationID: m.sendConversationID,
+			Sender:         string(agent.ID),
+			Body:           progress.Text,
+			ProgressKind:   displayProgressKind(progress.Kind),
+		}
+		if conversationID != "" && event.ConversationID != conversationID {
+			continue
+		}
+		events = append(events, event)
+	}
+	return events
+}
+
+func (m attachModel) renderReasoningBlock(event attachDisplayEvent) string {
+	header := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color(m.lookupAgentColor(event.Sender))).
+		Render(event.Sender)
+	header += m.styles.muted.Render(" " + displayProgressKind(event.ProgressKind))
+	body := m.styles.muted.Render(m.renderMentionStyledBody(event.Body))
+	return header + "\n" + m.styles.messageBody.Render(body)
+}
+
+func (m attachModel) currentReasoningDisplayEvent() (attachDisplayEvent, bool) {
+	progress, ok := m.primaryProgressEvent()
+	if !ok {
+		return attachDisplayEvent{}, false
+	}
+	return attachDisplayEvent{
+		Kind:           "reasoning",
+		RecordedAt:     progressTimestamp(progress),
+		ConversationID: m.sendConversationID,
+		Sender:         string(progress.AgentID),
+		Body:           progress.Text,
+		ProgressKind:   displayProgressKind(progress.Kind),
+	}, true
+}
+
+func progressTimestamp(event application.TransientProgressEvent) time.Time {
+	return time.Now().UTC()
+}
+
 func (m attachModel) renderMessageGroup(group []attachDisplayEvent) string {
 	head := group[0]
 	timestamp := ""
-	if m.ui.ShowTimestamps {
+	if m.options.Debug && m.ui.ShowTimestamps {
 		timestamp = m.styles.muted.Render(head.RecordedAt.UTC().Format("15:04:05")) + " "
 	}
 	senderStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(m.lookupAgentColor(head.Sender)))
@@ -184,10 +242,10 @@ func (m attachModel) renderMessageGroup(group []attachDisplayEvent) string {
 	if head.Pending {
 		header = m.styles.pendingSender.Render("[pending] " + head.Sender)
 	}
-	if head.ConversationID != "" {
+	if m.options.Debug && head.ConversationID != "" {
 		header = m.styles.muted.Render("["+string(head.ConversationID)+"] ") + header
 	}
-	if head.ReplyTo != "" {
+	if m.options.Debug && head.ReplyTo != "" {
 		header += m.styles.muted.Render(" ↩ " + string(head.ReplyTo))
 	}
 	if len(head.ToAgentIDs) > 0 {
@@ -317,46 +375,4 @@ func formatActiveTaskLine(task application.SandboxTask, now time.Time) string {
 		return fmt.Sprintf("sandbox task %s %s on %s for %s: %s", task.ID, status, task.RuntimeName, elapsed, summary)
 	}
 	return fmt.Sprintf("sandbox task %s %s on %s for %s", task.ID, status, task.RuntimeName, elapsed)
-}
-
-func (m attachModel) renderConversationPreviews() string {
-	if m.roomConversationScope() == "" {
-		return m.styles.muted.Render("Session timeline already includes all conversations.")
-	}
-
-	others := make([]domain.ConversationID, 0)
-	for _, id := range m.room.conversations {
-		if id != m.sendConversationID {
-			others = append(others, id)
-		}
-	}
-	if len(others) == 0 {
-		return m.styles.muted.Render("No secondary conversations.")
-	}
-
-	sections := make([]string, 0, len(others))
-	for _, id := range others {
-		lines := m.previewConversationLines(id, 4)
-		section := m.styles.sectionTitle.Render(string(id))
-		if len(lines) == 0 {
-			section += "\n" + m.styles.muted.Render("No messages")
-		} else {
-			section += "\n" + strings.Join(lines, "\n")
-		}
-		sections = append(sections, section)
-	}
-	return strings.Join(sections, "\n\n")
-}
-
-func (m attachModel) previewConversationLines(conversationID domain.ConversationID, limit int) []string {
-	lines := make([]string, 0, limit)
-	for _, message := range m.room.snapshot.Messages {
-		if message.ConversationID == conversationID {
-			lines = append(lines, fmt.Sprintf("%s: %s", senderNameForMessage(message), trimForSidebar(message.Body)))
-		}
-	}
-	if len(lines) > limit {
-		lines = lines[len(lines)-limit:]
-	}
-	return lines
 }

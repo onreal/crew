@@ -291,12 +291,14 @@ func TestTextProviderGenerateUsesCodexExec(t *testing.T) {
 	promptPath := filepath.Join(root, "captured-prompt.txt")
 	modelPath := filepath.Join(root, "captured-model.txt")
 	reasoningPath := filepath.Join(root, "captured-reasoning.txt")
+	reasoningSummaryPath := filepath.Join(root, "captured-reasoning-summary.txt")
 	sandboxModePath := filepath.Join(root, "captured-sandbox.txt")
 
 	binaryPath := writeFakeCodexScript(t, root, "#!/bin/sh\n"+
 		"OUTPUT=\"\"\n"+
 		"MODEL=\"\"\n"+
 		"REASONING=\"\"\n"+
+		"REASONING_SUMMARY=\"\"\n"+
 		"SANDBOX_MODE=\"\"\n"+
 		"LAST=\"\"\n"+
 		"while [ \"$#\" -gt 0 ]; do\n"+
@@ -316,6 +318,11 @@ func TestTextProviderGenerateUsesCodexExec(t *testing.T) {
 		"          REASONING=\"${REASONING#\\\"}\"\n"+
 		"          REASONING=\"${REASONING%\\\"}\"\n"+
 		"          ;;\n"+
+		"        model_reasoning_summary=*)\n"+
+		"          REASONING_SUMMARY=\"${2#model_reasoning_summary=}\"\n"+
+		"          REASONING_SUMMARY=\"${REASONING_SUMMARY#\\\"}\"\n"+
+		"          REASONING_SUMMARY=\"${REASONING_SUMMARY%\\\"}\"\n"+
+		"          ;;\n"+
 		"      esac\n"+
 		"      shift 2\n"+
 		"      ;;\n"+
@@ -331,6 +338,7 @@ func TestTextProviderGenerateUsesCodexExec(t *testing.T) {
 		"done\n"+
 		"printf '%s' \"$MODEL\" > "+shellQuote(modelPath)+"\n"+
 		"printf '%s' \"$REASONING\" > "+shellQuote(reasoningPath)+"\n"+
+		"printf '%s' \"$REASONING_SUMMARY\" > "+shellQuote(reasoningSummaryPath)+"\n"+
 		"printf '%s' \"$SANDBOX_MODE\" > "+shellQuote(sandboxModePath)+"\n"+
 		"printf '%s' \"$LAST\" > "+shellQuote(promptPath)+"\n"+
 		"printf '{\"message_body\":\"Codex reply\",\"sandbox_request\":null}' > \"$OUTPUT\"\n")
@@ -379,6 +387,13 @@ func TestTextProviderGenerateUsesCodexExec(t *testing.T) {
 	}
 	if string(reasoning) != agent.ReasoningEffort {
 		t.Fatalf("expected reasoning effort %q, got %q", agent.ReasoningEffort, string(reasoning))
+	}
+	reasoningSummary, err := os.ReadFile(reasoningSummaryPath)
+	if err != nil {
+		t.Fatalf("ReadFile(reasoningSummaryPath) error = %v", err)
+	}
+	if string(reasoningSummary) != "" {
+		t.Fatalf("expected no reasoning summary config without progress reporting, got %q", string(reasoningSummary))
 	}
 
 	sandboxMode, err := os.ReadFile(sandboxModePath)
@@ -470,8 +485,9 @@ func TestExtractProgressTextParsesReasoningEvent(t *testing.T) {
 	t.Parallel()
 
 	line := `{"type":"reasoning","summary":"Checking the workspace and planning the next reply"}`
-	if got := extractProgressText(line); got != "Checking the workspace and planning the next reply" {
-		t.Fatalf("unexpected reasoning text %q", got)
+	event, ok := extractProgressEvent("planner", line)
+	if !ok || event.Text != "Checking the workspace and planning the next reply" || event.Kind != "reasoning" {
+		t.Fatalf("unexpected reasoning event %+v ok=%t", event, ok)
 	}
 }
 
@@ -479,8 +495,49 @@ func TestExtractProgressTextFallsBackToProgressLabel(t *testing.T) {
 	t.Parallel()
 
 	line := `{"type":"thinking"}`
-	if got := extractProgressText(line); got != "thinking" {
-		t.Fatalf("unexpected progress text %q", got)
+	event, ok := extractProgressEvent("planner", line)
+	if !ok || event.Text != "thinking" || event.Kind != "thinking" {
+		t.Fatalf("unexpected progress event %+v ok=%t", event, ok)
+	}
+}
+
+func TestExtractProgressEventParsesItemBasedReasoningEvent(t *testing.T) {
+	t.Parallel()
+
+	line := `{"event":"item.completed","item":{"type":"reasoning","summary":[{"text":"Checking the workspace"}]}}`
+	event, ok := extractProgressEvent("planner", line)
+	if !ok || event.Kind != "reasoning" || event.Text != "Checking the workspace" {
+		t.Fatalf("unexpected item-based reasoning event %+v ok=%t", event, ok)
+	}
+}
+
+func TestExtractProgressEventParsesReasoningContentFallback(t *testing.T) {
+	t.Parallel()
+
+	line := `{"type":"assistant","reasoning_content":"Tracing the latest response path"}`
+	event, ok := extractProgressEvent("planner", line)
+	if !ok || event.Text != "Tracing the latest response path" {
+		t.Fatalf("unexpected reasoning_content fallback %+v ok=%t", event, ok)
+	}
+}
+
+func TestExtractProgressEventParsesResponseReasoningSummaryDelta(t *testing.T) {
+	t.Parallel()
+
+	line := `{"type":"response.reasoning_summary_text.delta","delta":"Checking the workspace"}`
+	event, ok := extractProgressEvent("planner", line)
+	if !ok || event.Kind != "reasoning" || event.Text != "Checking the workspace" {
+		t.Fatalf("unexpected response reasoning summary delta %+v ok=%t", event, ok)
+	}
+}
+
+func TestExtractProgressEventParsesSummaryTextField(t *testing.T) {
+	t.Parallel()
+
+	line := `{"type":"agent_reasoning","summary_text":"Checking the latest diff"}`
+	event, ok := extractProgressEvent("planner", line)
+	if !ok || event.Kind != "reasoning" || event.Text != "Checking the latest diff" {
+		t.Fatalf("unexpected summary_text reasoning event %+v ok=%t", event, ok)
 	}
 }
 
@@ -488,8 +545,8 @@ func TestExtractProgressTextIgnoresCompletedEvents(t *testing.T) {
 	t.Parallel()
 
 	line := `{"event":"completed","summary":"finalized"}`
-	if got := extractProgressText(line); got != "" {
-		t.Fatalf("expected completed event to be ignored, got %q", got)
+	if event, ok := extractProgressEvent("planner", line); ok {
+		t.Fatalf("expected completed event to be ignored, got %+v", event)
 	}
 }
 
@@ -527,8 +584,8 @@ func TestTextProviderGenerateStreamsReasoningFromStderr(t *testing.T) {
 		t.Fatalf("applicationTestAgent() error = %v", err)
 	}
 
-	var events []ReasoningEvent
-	ctx := WithReasoningReporter(context.Background(), func(event ReasoningEvent) {
+	var events []application.TransientProgressEvent
+	ctx := application.WithTransientProgressReporter(context.Background(), func(event application.TransientProgressEvent) {
 		events = append(events, event)
 	})
 	if _, err := provider.Generate(ctx, application.GenerationRequest{
@@ -540,8 +597,103 @@ func TestTextProviderGenerateStreamsReasoningFromStderr(t *testing.T) {
 		t.Fatalf("Generate() error = %v", err)
 	}
 
-	if len(events) != 1 || events[0].Text != "Checking the workspace" {
+	if len(events) != 1 || events[0].Text != "Checking the workspace" || events[0].Kind != "reasoning" || events[0].Provider != "codex" {
 		t.Fatalf("expected reasoning event from stderr, got %+v", events)
+	}
+}
+
+func TestTextProviderGenerateRequestsReasoningSummaryWhenProgressEnabled(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	reasoningSummaryPath := filepath.Join(root, "captured-reasoning-summary.txt")
+	binaryPath := writeFakeCodexScript(t, root, "#!/bin/sh\n"+
+		"OUTPUT=\"\"\n"+
+		"REASONING_SUMMARY=\"\"\n"+
+		"while [ \"$#\" -gt 0 ]; do\n"+
+		"  case \"$1\" in\n"+
+		"    --output-last-message)\n"+
+		"      OUTPUT=\"$2\"\n"+
+		"      shift 2\n"+
+		"      ;;\n"+
+		"    -c)\n"+
+		"      case \"$2\" in\n"+
+		"        model_reasoning_summary=*)\n"+
+		"          REASONING_SUMMARY=\"${2#model_reasoning_summary=}\"\n"+
+		"          REASONING_SUMMARY=\"${REASONING_SUMMARY#\\\"}\"\n"+
+		"          REASONING_SUMMARY=\"${REASONING_SUMMARY%\\\"}\"\n"+
+		"          ;;\n"+
+		"      esac\n"+
+		"      shift 2\n"+
+		"      ;;\n"+
+		"    *)\n"+
+		"      shift\n"+
+		"      ;;\n"+
+		"  esac\n"+
+		"done\n"+
+		"printf '%s' \"$REASONING_SUMMARY\" > "+shellQuote(reasoningSummaryPath)+"\n"+
+		"printf '{\"type\":\"response.reasoning_summary_text.delta\",\"delta\":\"Checking\"}\\n' >&2\n"+
+		"printf '{\"message_body\":\"Codex reply\",\"sandbox_request\":null}' > \"$OUTPUT\"\n")
+
+	provider, err := NewText(TextConfig{
+		BinaryPath:       binaryPath,
+		WorkingDirectory: root,
+		Timeout:          5 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("NewText() error = %v", err)
+	}
+
+	agent, err := applicationTestAgent("codex")
+	if err != nil {
+		t.Fatalf("applicationTestAgent() error = %v", err)
+	}
+
+	ctx := application.WithTransientProgressReporter(context.Background(), func(application.TransientProgressEvent) {})
+	if _, err := provider.Generate(ctx, application.GenerationRequest{
+		Agent: agent,
+		Messages: []domain.Message{
+			mustMessage("message-1", "review the runtime recovery path"),
+		},
+	}); err != nil {
+		t.Fatalf("Generate() error = %v", err)
+	}
+
+	reasoningSummary, err := os.ReadFile(reasoningSummaryPath)
+	if err != nil {
+		t.Fatalf("ReadFile(reasoningSummaryPath) error = %v", err)
+	}
+	if string(reasoningSummary) != "detailed" {
+		t.Fatalf("expected reasoning summary config %q, got %q", "detailed", string(reasoningSummary))
+	}
+}
+
+func TestJSONLProgressSinkAccumulatesReasoningSummaryDeltas(t *testing.T) {
+	t.Parallel()
+
+	var events []application.TransientProgressEvent
+	sink := newJSONLProgressSink("planner", func(event application.TransientProgressEvent) {
+		events = append(events, event)
+	})
+	if sink == nil {
+		t.Fatal("expected progress sink")
+	}
+
+	if _, err := sink.Write([]byte("{\"type\":\"response.reasoning_summary_text.delta\",\"delta\":\"Checking\"}\n")); err != nil {
+		t.Fatalf("Write(first) error = %v", err)
+	}
+	if _, err := sink.Write([]byte("{\"type\":\"response.reasoning_summary_text.delta\",\"delta\":\" the workspace\"}\n")); err != nil {
+		t.Fatalf("Write(second) error = %v", err)
+	}
+
+	if len(events) != 2 {
+		t.Fatalf("expected 2 streamed events, got %+v", events)
+	}
+	if events[0].Text != "Checking" {
+		t.Fatalf("expected first delta to render standalone text, got %+v", events[0])
+	}
+	if events[1].Text != "Checking the workspace" {
+		t.Fatalf("expected accumulated delta text, got %+v", events[1])
 	}
 }
 

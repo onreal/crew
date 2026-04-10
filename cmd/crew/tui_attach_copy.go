@@ -9,6 +9,7 @@ import (
 
 	"github.com/atotto/clipboard"
 	"github.com/aymanbagabas/go-osc52/v2"
+	"github.com/charmbracelet/lipgloss"
 
 	"crew/internal/domain"
 )
@@ -76,15 +77,10 @@ func (m attachModel) renderPlainTUISnapshot() string {
 		fmt.Sprintf("Room (%s)", m.roomConversationLabel()),
 		m.lastRoomPlainContent,
 	}
-	if m.layoutPreviewWidth > 0 {
+	if _, _, ok := m.activeReasoningPane(); ok && !m.options.Reasoning {
 		sections = append(sections, "Reasoning", m.renderPlainReasoningPane())
 	}
-	if m.layoutArtworkWidth > 0 {
-		sections = append(sections, "Artwork", m.renderPlainArtworkPanel())
-	}
-	if m.showSidebar {
-		sections = append(sections, "Status", m.renderPlainSidebar())
-	}
+	sections = append(sections, "Status", m.renderPlainSidebar())
 	sections = append(sections, "Input", m.renderPlainInput(), "Footer", attachFooterHelpText())
 
 	filtered := make([]string, 0, len(sections))
@@ -100,25 +96,29 @@ func (m attachModel) renderPlainHeader() string {
 	lines := []string{
 		fmt.Sprintf("crew room  session=%s  scope=%s  send=%s  mode=%s  status=%s",
 			m.options.SessionID, m.roomConversationLabel(), m.sendConversationID, m.room.snapshot.Session.Mode, m.room.snapshot.Session.Status),
-		fmt.Sprintf("orchestration=%s  auto_steps=%d  poll=%s  theme=%s  pending_ops=%d",
-			displayOrchestrationMode(m.options.Orchestration), m.options.AutoSteps, m.options.PollInterval, m.ui.Theme, m.pendingOps),
+		fmt.Sprintf("orchestration=%s  auto_steps=%d  poll=%s  theme=%s",
+			displayOrchestrationMode(m.options.Orchestration), m.options.AutoSteps, m.options.PollInterval, m.ui.Theme),
 	}
 	status := m.status
 	if m.lastError != "" {
 		status = m.lastError
-	} else if line := m.renderPendingStatusLine(); line != "" {
-		status = strings.TrimSpace(status + " | " + line)
 	}
 	lines = append(lines, status)
 	return strings.Join(lines, "\n")
 }
 
 func (m attachModel) renderPlainInput() string {
-	value := strings.TrimSpace(m.input.Value())
+	value := m.input.Value()
 	if value == "" {
-		value = m.input.Placeholder
+		value = "> " + m.input.Placeholder
+	} else {
+		value = "> " + value
 	}
-	return strings.Join([]string{value, m.renderInputAssistText()}, "\n")
+	sections := []string{value, m.renderInputAssistText(), strings.TrimSpace(m.renderCompactStatus(max(m.layoutMainWidth, 1)))}
+	if activity := strings.TrimSpace(m.renderPendingStatusLine()); activity != "" {
+		sections = append(sections, activity)
+	}
+	return strings.Join(sections, "\n")
 }
 
 func (m attachModel) renderPlainReasoningPane() string {
@@ -130,22 +130,7 @@ func (m attachModel) renderPlainReasoningPane() string {
 }
 
 func (m attachModel) renderPlainSidebar() string {
-	messageCounts, totalMessages := summarizeMessageCounts(m.room.snapshot.Messages)
-	parts := []string{fmt.Sprintf("msg %d", totalMessages)}
-	for _, agent := range m.agents {
-		name := agent.Name
-		if strings.TrimSpace(name) == "" {
-			name = string(agent.ID)
-		}
-		parts = append(parts, fmt.Sprintf("%s %d", name, messageCounts[string(agent.ID)]))
-	}
-	return strings.Join(parts, " | ")
-}
-
-func (m attachModel) renderPlainArtworkPanel() string {
-	width := max(m.layoutArtworkWidth-m.styles.preview.GetHorizontalFrameSize(), 24)
-	height := max(m.layoutArtworkHeight-m.styles.preview.GetVerticalFrameSize(), 7)
-	return renderPlainArtworkBlock(width, height)
+	return strings.TrimSpace(m.renderCompactStatus(max(m.layoutMainWidth, 1)))
 }
 
 func (m attachModel) renderConversationPane(conversationID domain.ConversationID, width int) (string, string) {
@@ -154,10 +139,12 @@ func (m attachModel) renderConversationPane(conversationID domain.ConversationID
 	}
 	events := m.displayEvents(conversationID)
 	if len(events) == 0 {
-		empty := "No messages yet. Type below to begin."
-		return m.styles.muted.Render(empty), empty
+		return m.renderEmptyConversationPane(width)
 	}
+	return m.renderEventPane(events, width)
+}
 
+func (m attachModel) renderEventPane(events []attachDisplayEvent, width int) (string, string) {
 	separator := "\n"
 	if !m.ui.CompactMessages {
 		separator = "\n\n"
@@ -167,6 +154,12 @@ func (m attachModel) renderConversationPane(conversationID domain.ConversationID
 	plainBlocks := make([]string, 0, len(events))
 	for idx := 0; idx < len(events); {
 		event := events[idx]
+		if event.Kind == "reasoning" {
+			styledBlocks = append(styledBlocks, wrapRenderedText(m.renderReasoningBlock(event), width))
+			plainBlocks = append(plainBlocks, m.renderPlainReasoningEvent(event))
+			idx++
+			continue
+		}
 		if event.Kind != "message" {
 			styledBlocks = append(styledBlocks, wrapRenderedText(m.renderNonMessageBlock(event), width))
 			plainBlocks = append(plainBlocks, m.renderPlainNonMessageBlock(event))
@@ -187,9 +180,18 @@ func (m attachModel) renderConversationPane(conversationID domain.ConversationID
 	return strings.Join(styledBlocks, separator), strings.Join(plainBlocks, separator)
 }
 
+func (m attachModel) renderEmptyConversationPane(width int) (string, string) {
+	artWidth := min(max(width/3, 28), width)
+	empty := "No messages yet. Type below to begin."
+	styledArt := lipgloss.PlaceHorizontal(width, lipgloss.Center, renderArtworkBlock(artWidth, 7, m.styles.muted, m.styles.status, m.styles.header))
+	plainArt := lipgloss.PlaceHorizontal(width, lipgloss.Center, renderPlainArtworkBlock(artWidth, 7))
+	return strings.Join([]string{styledArt, m.styles.muted.Render(empty)}, "\n\n"),
+		strings.Join([]string{plainArt, empty}, "\n\n")
+}
+
 func (m attachModel) renderPlainNonMessageBlock(event attachDisplayEvent) string {
 	prefix := ""
-	if m.ui.ShowTimestamps {
+	if m.options.Debug && m.ui.ShowTimestamps {
 		prefix = event.RecordedAt.UTC().Format("15:04:05") + " "
 	}
 	return prefix + event.Body
@@ -198,10 +200,10 @@ func (m attachModel) renderPlainNonMessageBlock(event attachDisplayEvent) string
 func (m attachModel) renderPlainMessageGroup(group []attachDisplayEvent) string {
 	head := group[0]
 	header := ""
-	if m.ui.ShowTimestamps {
+	if m.options.Debug && m.ui.ShowTimestamps {
 		header = head.RecordedAt.UTC().Format("15:04:05") + " "
 	}
-	header += plainMessageHeader(head)
+	header += plainMessageHeader(head, m.options.Debug)
 	bodies := make([]string, 0, len(group))
 	for _, event := range group {
 		bodies = append(bodies, "  "+event.Body)
@@ -209,15 +211,19 @@ func (m attachModel) renderPlainMessageGroup(group []attachDisplayEvent) string 
 	return header + "\n" + strings.Join(bodies, "\n")
 }
 
-func plainMessageHeader(head attachDisplayEvent) string {
+func (m attachModel) renderPlainReasoningEvent(event attachDisplayEvent) string {
+	return event.Sender + " " + displayProgressKind(event.ProgressKind) + "\n  " + event.Body
+}
+
+func plainMessageHeader(head attachDisplayEvent, debug bool) string {
 	header := head.Sender
 	if head.Pending {
 		header = "[pending] " + head.Sender
 	}
-	if head.ConversationID != "" {
+	if debug && head.ConversationID != "" {
 		header = "[" + string(head.ConversationID) + "] " + header
 	}
-	if head.ReplyTo != "" {
+	if debug && head.ReplyTo != "" {
 		header += " <- " + string(head.ReplyTo)
 	}
 	if len(head.ToAgentIDs) > 0 {

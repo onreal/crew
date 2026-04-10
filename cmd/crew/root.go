@@ -312,6 +312,7 @@ func newSessionCmd(state *runtimeState) *cobra.Command {
 	}
 
 	var mode string
+	var startReasoning bool
 	startCmd := &cobra.Command{
 		Use:   "start",
 		Short: "Create and start a new local session",
@@ -353,6 +354,7 @@ func newSessionCmd(state *runtimeState) *cobra.Command {
 				if err != nil {
 					return err
 				}
+				options.Reasoning = startReasoning
 				return state.runTUISessionView(cmd.Context(), cmd.InOrStdin(), cmd.OutOrStdout(), options)
 			}
 
@@ -363,6 +365,7 @@ func newSessionCmd(state *runtimeState) *cobra.Command {
 		},
 	}
 	startCmd.Flags().StringVar(&mode, "mode", "", "Session mode override: free or sequential")
+	startCmd.Flags().BoolVar(&startReasoning, "reasoning", false, "When auto-attaching the room on a real terminal, show live provider progress inline in the chat")
 
 	var sessionID string
 	pauseCmd := &cobra.Command{
@@ -1057,6 +1060,8 @@ func newTUICmd(state *runtimeState) *cobra.Command {
 	var attachAutoSteps int
 	var attachOrchestration string
 	var attachReplyRouting string
+	var attachDebug bool
+	var attachReasoning bool
 	attachCmd := &cobra.Command{
 		Use:   "attach",
 		Short: "Attach an interactive live text session view in the terminal",
@@ -1112,6 +1117,8 @@ func newTUICmd(state *runtimeState) *cobra.Command {
 				AutoSteps:      autoSteps,
 				Orchestration:  orchestrationMode,
 				ReplyRouting:   replyRoutingMode,
+				Debug:          attachDebug,
+				Reasoning:      attachReasoning,
 			}); err != nil {
 				return err
 			}
@@ -1125,6 +1132,8 @@ func newTUICmd(state *runtimeState) *cobra.Command {
 	attachCmd.Flags().IntVar(&attachAutoSteps, "auto-steps", -1, "After plain text input, run up to N free-mode turns in the attached conversation; defaults to ui.attach_auto_steps")
 	attachCmd.Flags().StringVar(&attachOrchestration, "orchestration", "", "Optional orchestration mode override: deterministic, round_robin, or mentioned_first")
 	attachCmd.Flags().StringVar(&attachReplyRouting, "reply-routing", "", "Optional reply routing override: latest_speaker or reply_obligations")
+	attachCmd.Flags().BoolVar(&attachDebug, "debug", false, "Show transcript metadata such as timestamps, conversation IDs, and reply target IDs")
+	attachCmd.Flags().BoolVar(&attachReasoning, "reasoning", false, "Show live provider progress inline in the chat while a turn is running")
 
 	cmd.AddCommand(attachCmd)
 

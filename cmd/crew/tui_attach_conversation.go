@@ -11,16 +11,13 @@ import (
 func (m *attachModel) ensureActiveConversation() {
 	if m.options.ConversationID != "" {
 		m.sendConversationID = m.options.ConversationID
-		m.selectedConvID = m.sendConversationID
 		return
 	}
 	if containsConversationID(m.room.conversations, m.sendConversationID) {
-		m.selectedConvID = m.sendConversationID
 		return
 	}
 	if len(m.room.conversations) > 0 {
 		m.sendConversationID = m.room.conversations[0]
-		m.selectedConvID = m.sendConversationID
 	}
 }
 
@@ -39,18 +36,15 @@ func (m *attachModel) cycleConversation(delta int) {
 	}
 	idx := 0
 	for i, id := range m.room.conversations {
-		if id == m.selectedConvID {
+		if id == m.sendConversationID {
 			idx = i
 			break
 		}
 	}
 	idx = (idx + delta + len(m.room.conversations)) % len(m.room.conversations)
-	m.selectedConvID = m.room.conversations[idx]
-	m.sendConversationID = m.selectedConvID
-	m.stickyBottom = true
-	m.status = fmt.Sprintf("active conversation: %s", m.selectedConvID)
-	m.layout()
-	m.syncViewportContent(true)
+	m.sendConversationID = m.room.conversations[idx]
+	m.status = fmt.Sprintf("active conversation: %s", m.sendConversationID)
+	m.syncViewportContent(false)
 }
 
 func (m *attachModel) setPendingSequence(maxSteps int) {
@@ -59,7 +53,7 @@ func (m *attachModel) setPendingSequence(maxSteps int) {
 
 func (m *attachModel) setPendingSequenceFromHistory(history []domain.Message, maxSteps int) {
 	clear(m.pendingAgentStates)
-	clear(m.reasoningByAgent)
+	clear(m.progressByAgent)
 	sequence := estimatePendingSequence(history, m.agents, m.options.Orchestration, maxSteps)
 	for idx, agentID := range sequence {
 		if idx == 0 {
@@ -114,16 +108,6 @@ func estimatePendingSequence(messages []domain.Message, agents []domain.Agent, m
 
 func (m attachModel) canSplitConversations() bool {
 	return false
-}
-
-func (m attachModel) activeConversation() domain.ConversationID {
-	if m.options.ConversationID != "" {
-		return m.options.ConversationID
-	}
-	if m.selectedConvID != "" {
-		return m.selectedConvID
-	}
-	return m.sendConversationID
 }
 
 func (m attachModel) roomConversationScope() domain.ConversationID {

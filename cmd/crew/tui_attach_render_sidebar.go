@@ -6,16 +6,20 @@ import (
 	"hash/fnv"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 
+	"crew/internal/application"
 	"crew/internal/domain"
 )
 
+var attachSpinnerFrames = []string{"-", "\\", "|", "/"}
+
 func (m attachModel) renderCompactStatus(width int) string {
 	messageCounts, totalMessages := summarizeMessageCounts(m.room.snapshot.Messages)
-	separator := m.styles.muted.Render(" | ")
-	segments := []string{m.styles.sectionTitle.Render("msg") + " " + m.styles.muted.Render(fmt.Sprintf("%d", totalMessages))}
+	separator := " | "
+	segments := []string{fmt.Sprintf("msg %d", totalMessages)}
 	segments = append(segments, m.renderParticipantSegments(width, separator, messageCounts)...)
 	line := strings.Join(segments, separator)
 	if padding := width - lipgloss.Width(line); padding > 0 {
@@ -58,8 +62,7 @@ func (m attachModel) renderParticipantSegments(width int, separator string, mess
 	for idx, agent := range m.agents {
 		count := fmt.Sprintf("%d", messageCounts[string(agent.ID)])
 		label := truncatePlainText(names[idx], labelBudgets[idx])
-		color := lipgloss.NewStyle().Foreground(lipgloss.Color(m.lookupAgentColor(string(agent.ID)))).Render(label)
-		segments = append(segments, color+" "+m.styles.muted.Render(count))
+		segments = append(segments, label+" "+count)
 	}
 	return segments
 }
@@ -122,14 +125,25 @@ func distributeLabelWidths(labels []string, available int) []int {
 }
 
 func (m attachModel) renderPendingStatusLine() string {
-	parts := make([]string, 0, len(m.pendingAgentStates))
+	parts := make([]string, 0, len(m.pendingAgentStates)+2)
+	if len(m.optimistic) > 0 {
+		parts = append(parts, fmt.Sprintf("%s sending", m.spinnerFrameGlyph()))
+	}
+	if summary := m.primaryActiveTaskSummary(); summary != "" {
+		parts = append(parts, fmt.Sprintf("%s %s", m.spinnerFrameGlyph(), summary))
+	}
 	for _, agent := range m.agents {
 		if state, exists := m.pendingAgentStates[agent.ID]; exists {
-			parts = append(parts, fmt.Sprintf("%s %s", agent.ID, state))
+			switch state {
+			case "queued":
+				parts = append(parts, fmt.Sprintf("%s queued", agent.ID))
+			default:
+				parts = append(parts, fmt.Sprintf("%s %s", agent.ID, m.spinnerFrameGlyph()))
+			}
 		}
 	}
-	if agentID, text, ok := m.primaryReasoning(); ok {
-		parts = append(parts, fmt.Sprintf("%s reasoning: %s", agentID, text))
+	if event, ok := m.primaryProgressEvent(); ok {
+		parts = append(parts, fmt.Sprintf("%s %s: %s", event.AgentID, displayProgressKind(event.Kind), truncatePlainText(event.Text, 80)))
 	}
 	if len(parts) == 0 {
 		return ""
@@ -137,13 +151,13 @@ func (m attachModel) renderPendingStatusLine() string {
 	return "activity: " + strings.Join(parts, "  |  ")
 }
 
-func (m attachModel) primaryReasoning() (domain.AgentID, string, bool) {
+func (m attachModel) primaryProgressEvent() (application.TransientProgressEvent, bool) {
 	for _, agent := range m.agents {
-		if text := strings.TrimSpace(m.reasoningByAgent[agent.ID]); text != "" {
-			return agent.ID, truncatePlainText(text, 80), true
+		if event, ok := m.progressByAgent[agent.ID]; ok && strings.TrimSpace(event.Text) != "" {
+			return event, true
 		}
 	}
-	return "", "", false
+	return application.TransientProgressEvent{}, false
 }
 
 func (m attachModel) primaryPendingAgent() (domain.AgentID, bool) {
@@ -158,10 +172,51 @@ func (m attachModel) primaryPendingAgent() (domain.AgentID, bool) {
 }
 
 func (m attachModel) activeReasoningPane() (string, string, bool) {
-	if agentID, text, ok := m.primaryReasoning(); ok {
-		return string(agentID) + " reasoning", text, true
+	if event, ok := m.primaryProgressEvent(); ok {
+		return string(event.AgentID) + " " + displayProgressKind(event.Kind), truncatePlainText(event.Text, 80), true
 	}
 	return "", "", false
+}
+
+func displayProgressKind(kind string) string {
+	kind = strings.TrimSpace(kind)
+	if kind == "" {
+		return "progress"
+	}
+	return kind
+}
+
+func (m attachModel) spinnerFrameGlyph() string {
+	if len(attachSpinnerFrames) == 0 {
+		return "-"
+	}
+	return attachSpinnerFrames[m.spinnerFrame%len(attachSpinnerFrames)]
+}
+
+func (m attachModel) primaryActiveTaskSummary() string {
+	if len(m.room.tasks) == 0 {
+		return ""
+	}
+	now := time.Now().UTC()
+	tasks := append([]application.SandboxTask(nil), m.room.tasks...)
+	sort.Slice(tasks, func(i, j int) bool {
+		left := tasks[i].CreatedAt
+		if tasks[i].StartedAt != nil {
+			left = *tasks[i].StartedAt
+		}
+		right := tasks[j].CreatedAt
+		if tasks[j].StartedAt != nil {
+			right = *tasks[j].StartedAt
+		}
+		return left.Before(right)
+	})
+	for _, task := range tasks {
+		if task.Status != application.SandboxTaskStatusPending && task.Status != application.SandboxTaskStatusRunning {
+			continue
+		}
+		return formatActiveTaskLine(task, now)
+	}
+	return ""
 }
 
 func summarizeMessageCounts(messages []domain.Message) (map[string]int, int) {

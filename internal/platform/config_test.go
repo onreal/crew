@@ -73,17 +73,11 @@ func TestLoadConfigDefaultsWithoutFile(t *testing.T) {
 	if loaded.Config.UI.AttachAutoSteps != 1 {
 		t.Fatalf("expected default attach auto steps 1, got %d", loaded.Config.UI.AttachAutoSteps)
 	}
-	if !loaded.Config.UI.AttachSplitPanes {
-		t.Fatal("expected default attach split panes true")
-	}
 	if loaded.Config.UI.Theme != "sunrise" {
 		t.Fatalf("expected default ui theme sunrise, got %q", loaded.Config.UI.Theme)
 	}
 	if !loaded.Config.UI.ShowTimestamps {
 		t.Fatal("expected default ui.show_timestamps=true")
-	}
-	if !loaded.Config.UI.AttachSidebar {
-		t.Fatal("expected default ui.attach_sidebar=true")
 	}
 	if len(loaded.Config.UI.AgentColors) == 0 {
 		t.Fatal("expected default agent colors to be populated")
@@ -131,11 +125,9 @@ vector:
 ui:
   refresh_interval_millis: 400
   attach_auto_steps: 3
-  attach_split_panes: false
   theme: graphite
   show_timestamps: false
   compact_messages: true
-  attach_sidebar: false
   agent_colors:
     planner: "#111111"
 `)
@@ -202,9 +194,6 @@ ui:
 	if loaded.Config.UI.AttachAutoSteps != 3 {
 		t.Fatalf("expected attach auto steps 3, got %d", loaded.Config.UI.AttachAutoSteps)
 	}
-	if loaded.Config.UI.AttachSplitPanes {
-		t.Fatal("expected ui.attach_split_panes=false")
-	}
 	if loaded.Config.UI.Theme != "graphite" {
 		t.Fatalf("expected ui theme graphite, got %q", loaded.Config.UI.Theme)
 	}
@@ -213,9 +202,6 @@ ui:
 	}
 	if !loaded.Config.UI.CompactMessages {
 		t.Fatal("expected ui.compact_messages=true")
-	}
-	if loaded.Config.UI.AttachSidebar {
-		t.Fatal("expected ui.attach_sidebar=false")
 	}
 	if loaded.Config.UI.AgentColors["planner"] != "#111111" {
 		t.Fatalf("expected planner override color, got %#v", loaded.Config.UI.AgentColors)

@@ -6,7 +6,6 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
 	runtimeadapter "crew/internal/adapters/runtime"
@@ -15,135 +14,67 @@ import (
 	"crew/internal/platform"
 )
 
-func TestAttachModelHeaderAndInputHeightsStayFixed(t *testing.T) {
-	ui := platform.DefaultConfig().UI
-	model := newAttachModel(context.Background(), nil, liveViewOptions{SessionID: "session-1"}, "conversation-1", ui)
-	model.width, model.height = 100, 30
-	model.layout()
-	model.room = attachRoomState{snapshot: runtimeadapter.SessionSnapshot{
-		Session: domain.Session{ID: "session-1", Mode: domain.SessionModeFree, Status: domain.SessionStatusRunning},
-	}, conversations: []domain.ConversationID{"conversation-1"}}
-	model.syncViewportContent(true)
-
-	baseHeaderHeight := lipgloss.Height(model.renderHeader())
-	baseInputHeight := lipgloss.Height(model.renderInput())
-	if baseHeaderHeight != 3 {
-		t.Fatalf("expected fixed header height 3, got %d", baseHeaderHeight)
-	}
-	if baseInputHeight < 4 {
-		t.Fatalf("expected input area to occupy at least 4 lines, got %d", baseInputHeight)
-	}
-	if got := lipgloss.Height(model.View()); got != model.height {
-		t.Fatalf("expected base view height %d, got %d", model.height, got)
-	}
-
-	model.status = strings.Repeat("very long status ", 20)
-	model.pendingAgentStates = map[domain.AgentID]string{"planner": "thinking", "reviewer": "queued", "writer": "queued"}
-	model.input.SetValue(strings.Repeat("typing into the input should not move the board ", 12))
-	model.layout()
-	model.syncViewportContent(true)
-
-	if got := lipgloss.Height(model.renderHeader()); got != 3 {
-		t.Fatalf("expected fixed header height after long status, got %d", got)
-	}
-	if got := lipgloss.Height(model.renderInput()); got != baseInputHeight {
-		t.Fatalf("expected fixed input render height %d after long input, got %d", baseInputHeight, got)
-	}
-	if got := lipgloss.Height(model.View()); got != model.height {
-		t.Fatalf("expected rendered view height %d after long status/input, got %d", model.height, got)
-	}
-	if got := maxRenderedLineWidth(model.View()); got > model.width {
-		t.Fatalf("expected rendered view width <= %d, got %d", model.width, got)
-	}
-}
-
-func TestAttachModelStickyBottomTogglesWithScrollKeys(t *testing.T) {
-	ui := platform.DefaultConfig().UI
-	model := newAttachModel(context.Background(), nil, liveViewOptions{SessionID: "session-1"}, "conversation-1", ui)
-	model.width, model.height = 100, 30
-	model.layout()
-	model.viewport.SetContent(strings.Repeat("line\n", 100))
-	model.viewport.GotoBottom()
-
-	if !model.stickyBottom {
-		t.Fatal("expected sticky bottom enabled by default")
-	}
-	updated, _ := model.Update(tea.KeyMsg{Type: tea.KeyPgUp})
-	model = updated.(attachModel)
-	if model.stickyBottom || model.viewport.YOffset == 0 {
-		t.Fatal("expected sticky bottom disabled and offset above top after pgup")
-	}
-	updated, _ = model.Update(tea.KeyMsg{Type: tea.KeyEnd})
-	model = updated.(attachModel)
-	if !model.stickyBottom || !model.viewport.AtBottom() {
-		t.Fatalf("expected viewport to return to bottom, offset=%d max=%d", model.viewport.YOffset, model.viewport.TotalLineCount()-model.viewport.Height)
-	}
-}
-
-func TestAttachModelViewFitsWindowWithCompactStatusAndWrappedMessages(t *testing.T) {
+func TestAttachModelViewStaysWithinConfiguredWidth(t *testing.T) {
 	ui := platform.DefaultConfig().UI
 	now := time.Now().UTC()
 	model := newAttachModel(context.Background(), nil, liveViewOptions{SessionID: "session-1"}, "conversation-1", ui)
-	model.width, model.height = 132, 28
+	model.width, model.height = 100, 20
 	model.room = attachRoomState{
 		snapshot: runtimeadapter.SessionSnapshot{
 			Session: domain.Session{ID: "session-1", Mode: domain.SessionModeFree, Status: domain.SessionStatusRunning},
 			Messages: []domain.Message{{
 				ID: "message-1", SessionID: "session-1", ConversationID: "conversation-1",
 				Sender: domain.UserSender("operator"), Channel: domain.MessageChannelUser, Kind: domain.MessageKindUtterance,
-				Body: strings.Repeat("operator text that should wrap cleanly across the room pane and stay visible inside the viewport ", 3), Timestamp: now,
+				Body: strings.Repeat("operator transcript text that should wrap cleanly ", 4), Timestamp: now,
 			}},
 			Stream: []runtimeadapter.StreamEntry{{
 				RecordedAt: now,
 				Payload: application.MessageDispatchedEvent{Message: domain.Message{
 					ID: "message-1", SessionID: "session-1", ConversationID: "conversation-1",
 					Sender: domain.UserSender("operator"), Channel: domain.MessageChannelUser, Kind: domain.MessageKindUtterance,
-					Body: strings.Repeat("operator text that should wrap cleanly across the room pane and stay visible inside the viewport ", 3),
+					Body: strings.Repeat("operator transcript text that should wrap cleanly ", 4),
 				}},
 			}},
 		},
 		conversations: []domain.ConversationID{"conversation-1", "conversation-2"},
 	}
 	model.layout()
-	model.syncViewportContent(true)
+	model.syncViewportContent(false)
 
 	view := model.View()
-	if got := lipgloss.Height(view); got != model.height {
-		t.Fatalf("expected rendered view height %d, got %d", model.height, got)
-	}
 	if got := maxRenderedLineWidth(view); got > model.width {
 		t.Fatalf("expected rendered view width <= %d, got %d", model.width, got)
 	}
-	if !strings.Contains(view, "conversation-1") {
-		t.Fatalf("expected active conversation to remain visible, got:\n%s", view)
-	}
-	if !strings.Contains(model.renderInput(), "NOSTATE") || !strings.Contains(model.renderInput(), "CREW CLI") {
-		t.Fatalf("expected wide layout to render artwork beside input, got:\n%s", model.renderInput())
-	}
-	if strings.Contains(model.renderBody(), "NOSTATE") || strings.Contains(model.renderBody(), "CREW CLI") {
-		t.Fatalf("expected artwork to stay out of the chat body, got:\n%s", model.renderBody())
-	}
-	if model.layoutMainWidth != model.width {
-		t.Fatalf("expected chat layout width to remain full screen, got main=%d total=%d", model.layoutMainWidth, model.width)
-	}
-	if model.layoutSidebarWidth != 0 {
-		t.Fatalf("expected no right sidebar width reservation, got %d", model.layoutSidebarWidth)
-	}
-	if model.layoutArtworkWidth == 0 {
-		t.Fatal("expected wide layout to reserve artwork width")
+	if !strings.Contains(view, "send=conversation-1") || !strings.Contains(view, "operator") {
+		t.Fatalf("expected send target header and transcript to remain visible, got:\n%s", view)
 	}
 }
 
-func TestAttachModelNarrowWindowOmitsArtworkPanel(t *testing.T) {
+func TestAttachModelViewIsBorderlessAndOmitsArtworkChrome(t *testing.T) {
 	ui := platform.DefaultConfig().UI
 	model := newAttachModel(context.Background(), nil, liveViewOptions{SessionID: "session-1"}, "conversation-1", ui)
-	model.width, model.height = 100, 24
+	model.width, model.height = 140, 24
 	model.layout()
-	if model.layoutArtworkWidth != 0 {
-		t.Fatalf("expected no artwork width on narrow layout, got %d", model.layoutArtworkWidth)
+	model.syncViewportContent(false)
+
+	view := model.View()
+	for _, token := range []string{"│", "─", "┌", "┐", "└", "┘"} {
+		if strings.Contains(view, token) {
+			t.Fatalf("expected borderless codex-style view without %q, got:\n%s", token, view)
+		}
 	}
-	if strings.Contains(model.renderInput(), "NOSTATE") || strings.Contains(model.renderInput(), "CREW CLI") {
-		t.Fatalf("expected narrow layout to omit artwork panel, got:\n%s", model.renderInput())
+}
+
+func TestAttachModelEmptyStateShowsCrewArtwork(t *testing.T) {
+	ui := platform.DefaultConfig().UI
+	model := newAttachModel(context.Background(), nil, liveViewOptions{SessionID: "session-1"}, "conversation-1", ui)
+	model.width, model.height = 120, 24
+	model.layout()
+	model.syncViewportContent(false)
+
+	view := model.View()
+	if !strings.Contains(view, "CREW CLI") || !strings.Contains(view, "NOSTATE") {
+		t.Fatalf("expected empty room artwork in view, got:\n%s", view)
 	}
 }
 
@@ -167,13 +98,16 @@ func TestAttachModelDefaultRoomScopeShowsWholeSessionTimeline(t *testing.T) {
 	}
 	model.width, model.height = 100, 24
 	model.layout()
-	model.syncViewportContent(true)
+	model.syncViewportContent(false)
 
 	if got := model.roomConversationScope(); got != "" {
 		t.Fatalf("expected unpinned attach room to use session scope, got %q", got)
 	}
-	if !strings.Contains(model.lastViewportContent, "conversation-1") || !strings.Contains(model.lastViewportContent, "conversation-2") {
-		t.Fatalf("expected session timeline to include both conversation labels, got:\n%s", model.lastViewportContent)
+	if !strings.Contains(model.lastRoomContent, "older thread context") || !strings.Contains(model.lastRoomContent, "current thread context") {
+		t.Fatalf("expected session timeline to include both conversations, got:\n%s", model.lastRoomContent)
+	}
+	if strings.Contains(model.lastRoomContent, "conversation-1") || strings.Contains(model.lastRoomContent, "conversation-2") {
+		t.Fatalf("expected non-debug transcript to omit conversation ids, got:\n%s", model.lastRoomContent)
 	}
 	if !strings.Contains(model.renderHeader(), "scope=session") {
 		t.Fatalf("expected header to show session scope, got:\n%s", model.renderHeader())
@@ -200,16 +134,46 @@ func TestAttachModelPinnedSendTargetStillShowsWholeSessionTimeline(t *testing.T)
 	}
 	model.width, model.height = 100, 24
 	model.layout()
-	model.syncViewportContent(true)
+	model.syncViewportContent(false)
 
 	if got := model.roomConversationScope(); got != "" {
 		t.Fatalf("expected attach room to stay on session scope, got %q", got)
 	}
-	if !strings.Contains(model.lastViewportContent, "conversation-1") || !strings.Contains(model.lastViewportContent, "conversation-2") {
-		t.Fatalf("expected session timeline to include both conversations, got:\n%s", model.lastViewportContent)
+	if !strings.Contains(model.lastRoomContent, "older thread context") || !strings.Contains(model.lastRoomContent, "current thread context") {
+		t.Fatalf("expected session timeline to include both conversations, got:\n%s", model.lastRoomContent)
+	}
+	if strings.Contains(model.lastRoomContent, "conversation-1") || strings.Contains(model.lastRoomContent, "conversation-2") {
+		t.Fatalf("expected non-debug transcript to omit conversation ids, got:\n%s", model.lastRoomContent)
 	}
 	if !strings.Contains(model.renderHeader(), "scope=session") || !strings.Contains(model.renderHeader(), "send=conversation-2") {
 		t.Fatalf("expected header to show session scope and send target, got:\n%s", model.renderHeader())
+	}
+}
+
+func TestAttachModelDebugTranscriptShowsMetadata(t *testing.T) {
+	ui := platform.DefaultConfig().UI
+	now := time.Now().UTC()
+	model := newAttachModel(context.Background(), nil, liveViewOptions{SessionID: "session-1", Debug: true}, "conversation-1", ui)
+	model.room = attachRoomState{
+		snapshot: runtimeadapter.SessionSnapshot{
+			Session: domain.Session{ID: "session-1", Mode: domain.SessionModeFree, Status: domain.SessionStatusRunning},
+			Messages: []domain.Message{
+				{ID: "message-1", SessionID: "session-1", ConversationID: "conversation-1", Sender: domain.UserSender("operator"), Channel: domain.MessageChannelUser, Kind: domain.MessageKindUtterance, Body: "hello", Timestamp: now},
+				{ID: "message-2", SessionID: "session-1", ConversationID: "conversation-1", Sender: domain.AgentSender("writer"), Channel: domain.MessageChannelBroadcast, Kind: domain.MessageKindUtterance, Body: "reply", ReplyTo: "message-1", Timestamp: now.Add(time.Second)},
+			},
+			Stream: []runtimeadapter.StreamEntry{
+				{RecordedAt: now, Payload: application.MessageDispatchedEvent{Message: domain.Message{ID: "message-1", SessionID: "session-1", ConversationID: "conversation-1", Sender: domain.UserSender("operator"), Channel: domain.MessageChannelUser, Kind: domain.MessageKindUtterance, Body: "hello"}}},
+				{RecordedAt: now.Add(time.Second), Payload: application.MessageDispatchedEvent{Message: domain.Message{ID: "message-2", SessionID: "session-1", ConversationID: "conversation-1", Sender: domain.AgentSender("writer"), Channel: domain.MessageChannelBroadcast, Kind: domain.MessageKindUtterance, Body: "reply", ReplyTo: "message-1"}}},
+			},
+		},
+		conversations: []domain.ConversationID{"conversation-1"},
+	}
+
+	rendered := model.renderConversationContent("conversation-1")
+	for _, expected := range []string{"conversation-1", "message-1", now.Format("15:04:05")} {
+		if !strings.Contains(rendered, expected) {
+			t.Fatalf("expected debug transcript metadata %q, got:\n%s", expected, rendered)
+		}
 	}
 }
 

@@ -90,11 +90,9 @@ type RuntimeConfig struct {
 type UIConfig struct {
 	RefreshIntervalMillis int               `mapstructure:"refresh_interval_millis" json:"refresh_interval_millis"`
 	AttachAutoSteps       int               `mapstructure:"attach_auto_steps" json:"attach_auto_steps"`
-	AttachSplitPanes      bool              `mapstructure:"attach_split_panes" json:"attach_split_panes"`
 	Theme                 string            `mapstructure:"theme" json:"theme"`
 	ShowTimestamps        bool              `mapstructure:"show_timestamps" json:"show_timestamps"`
 	CompactMessages       bool              `mapstructure:"compact_messages" json:"compact_messages"`
-	AttachSidebar         bool              `mapstructure:"attach_sidebar" json:"attach_sidebar"`
 	AgentColors           map[string]string `mapstructure:"agent_colors" json:"agent_colors"`
 }
 
@@ -177,11 +175,9 @@ func DefaultConfig() Config {
 		UI: UIConfig{
 			RefreshIntervalMillis: 250,
 			AttachAutoSteps:       1,
-			AttachSplitPanes:      true,
 			Theme:                 "sunrise",
 			ShowTimestamps:        true,
 			CompactMessages:       false,
-			AttachSidebar:         true,
 			AgentColors: map[string]string{
 				"operator": "#f97316",
 				"system":   "#fbbf24",
@@ -415,11 +411,9 @@ func configureViper(v *viper.Viper) {
 	v.SetDefault("runtime.state_path", defaults.Runtime.StatePath)
 	v.SetDefault("ui.refresh_interval_millis", defaults.UI.RefreshIntervalMillis)
 	v.SetDefault("ui.attach_auto_steps", defaults.UI.AttachAutoSteps)
-	v.SetDefault("ui.attach_split_panes", defaults.UI.AttachSplitPanes)
 	v.SetDefault("ui.theme", defaults.UI.Theme)
 	v.SetDefault("ui.show_timestamps", defaults.UI.ShowTimestamps)
 	v.SetDefault("ui.compact_messages", defaults.UI.CompactMessages)
-	v.SetDefault("ui.attach_sidebar", defaults.UI.AttachSidebar)
 	v.SetDefault("ui.agent_colors", defaults.UI.AgentColors)
 }
 

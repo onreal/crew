@@ -34,6 +34,35 @@ func TestAttachModelRenderInputShowsCommandAssist(t *testing.T) {
 	}
 }
 
+func TestAttachModelRenderInputShowsSinglePlaceholderWhenEmpty(t *testing.T) {
+	ui := platform.DefaultConfig().UI
+	model := newAttachModel(context.Background(), nil, liveViewOptions{SessionID: "session-1"}, "conversation-1", ui)
+	model.width, model.height = 100, 24
+	model.layout()
+
+	rendered := model.renderInput()
+	if count := strings.Count(rendered, "Type a message or /help"); count != 1 {
+		t.Fatalf("expected one placeholder line, got %d in:\n%s", count, rendered)
+	}
+}
+
+func TestAttachModelRenderInputHidesPlaceholderWhileTyping(t *testing.T) {
+	ui := platform.DefaultConfig().UI
+	model := newAttachModel(context.Background(), nil, liveViewOptions{SessionID: "session-1"}, "conversation-1", ui)
+	model.width, model.height = 100, 24
+	model.input.SetValue("hello there")
+	model.input.CursorEnd()
+	model.layout()
+
+	rendered := model.renderInput()
+	if strings.Contains(rendered, "Type a message or /help") {
+		t.Fatalf("expected placeholder to disappear while typing, got:\n%s", rendered)
+	}
+	if !strings.Contains(rendered, "hello there") {
+		t.Fatalf("expected typed message in input, got:\n%s", rendered)
+	}
+}
+
 func TestAttachModelAcceptsMentionSuggestion(t *testing.T) {
 	ui := platform.DefaultConfig().UI
 	model := newAttachModel(context.Background(), nil, liveViewOptions{SessionID: "session-1"}, "conversation-1", ui)
@@ -85,8 +114,11 @@ func TestAttachModelSubmitInputMentionsTargetsMultipleAgents(t *testing.T) {
 	if got := model.optimistic[0].ToAgentIDs; len(got) != 2 || got[0] != "planner" || got[1] != "reviewer" {
 		t.Fatalf("expected direct optimistic recipients [planner reviewer], got %#v", got)
 	}
-	if rendered := model.renderConversationContent("conversation-1"); !strings.Contains(rendered, "-> planner,reviewer") {
-		t.Fatalf("expected direct recipients in rendered conversation, got:\n%s", rendered)
+	if rendered := model.renderConversationContent("conversation-1"); strings.Contains(rendered, "planner,reviewer") {
+		t.Fatalf("expected optimistic direct recipients to stay out of transcript until persisted, got:\n%s", rendered)
+	}
+	if input := model.renderInput(); !strings.Contains(input, "activity:") {
+		t.Fatalf("expected submit activity below input, got:\n%s", input)
 	}
 }
 

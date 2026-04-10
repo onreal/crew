@@ -32,26 +32,22 @@ func TestAttachModelSubmitInputPinsConversationAndShowsPendingActivity(t *testin
 		},
 		conversations: []domain.ConversationID{"conversation-1", "conversation-2"},
 	}
-	model.selectedConvID = "conversation-1"
 	model.width, model.height = 120, 30
 	model.layout()
 
 	model.submitInput("hello room")
 
-	if model.selectedConvID != "conversation-2" {
-		t.Fatalf("expected selected conversation to switch to send conversation, got %q", model.selectedConvID)
-	}
 	if len(model.optimistic) != 1 {
 		t.Fatalf("expected optimistic message to be appended, got %d", len(model.optimistic))
 	}
 	if len(model.pendingAgentStates) == 0 {
 		t.Fatal("expected pending agent states to be populated immediately")
 	}
-	if rendered := model.renderConversationContent("conversation-2"); !strings.Contains(rendered, "hello room") {
-		t.Fatalf("expected optimistic operator message in rendered content, got:\n%s", rendered)
+	if rendered := model.renderConversationContent("conversation-2"); strings.Contains(rendered, "hello room") {
+		t.Fatalf("expected optimistic operator message to stay out of transcript content, got:\n%s", rendered)
 	}
-	if header := model.renderHeader(); !strings.Contains(header, "thinking") {
-		t.Fatalf("expected pending agent activity in header, got:\n%s", header)
+	if input := model.renderInput(); !strings.Contains(input, "activity:") {
+		t.Fatalf("expected pending agent activity below input, got:\n%s", input)
 	}
 }
 
@@ -70,9 +66,6 @@ func TestAttachModelSubmitInputUsesDeferredDispatch(t *testing.T) {
 	}
 	if dispatchMsg.request.Body != "hello" || dispatchMsg.autoSteps != 2 {
 		t.Fatalf("unexpected deferred dispatch payload: %#v", dispatchMsg)
-	}
-	if !model.stickyBottom {
-		t.Fatal("expected submit input to keep room pinned to bottom")
 	}
 }
 
@@ -112,7 +105,9 @@ func TestAttachModelStepProgressClearsPendingBeforeRefresh(t *testing.T) {
 	model.width, model.height = 120, 30
 	model.layout()
 	model.pendingAgentStates = map[domain.AgentID]string{"reviewer": "thinking", "writer": "queued"}
-	model.reasoningByAgent = map[domain.AgentID]string{"reviewer": "checking the latest patch"}
+	model.progressByAgent = map[domain.AgentID]application.TransientProgressEvent{
+		"reviewer": {Provider: "codex", AgentID: "reviewer", Kind: "reasoning", Text: "checking the latest patch"},
+	}
 	model.room = attachRoomState{
 		snapshot: runtimeadapter.SessionSnapshot{
 			Session: domain.Session{ID: "session-1", Mode: domain.SessionModeFree, Status: domain.SessionStatusRunning},
@@ -133,11 +128,11 @@ func TestAttachModelStepProgressClearsPendingBeforeRefresh(t *testing.T) {
 	if len(next.pendingAgentStates) != 0 {
 		t.Fatalf("expected pending agent states cleared after final step, got %#v", next.pendingAgentStates)
 	}
-	if len(next.reasoningByAgent) != 0 {
-		t.Fatalf("expected reasoning state cleared after final step, got %#v", next.reasoningByAgent)
+	if len(next.progressByAgent) != 0 {
+		t.Fatalf("expected reasoning state cleared after final step, got %#v", next.progressByAgent)
 	}
-	if strings.Contains(next.renderHeader(), "thinking") || strings.Contains(next.renderHeader(), "queued") {
-		t.Fatalf("expected no pending activity in header after final step, got:\n%s", next.renderHeader())
+	if strings.Contains(next.renderInput(), "activity:") {
+		t.Fatalf("expected no pending activity below input after final step, got:\n%s", next.renderInput())
 	}
 	if !strings.Contains(next.renderConversationContent("conversation-1"), "first reply") {
 		t.Fatalf("expected persisted reply to remain visible in conversation content")
@@ -182,8 +177,11 @@ func TestAttachModelErrorRendersNoticeInConversation(t *testing.T) {
 
 	updated, _ := model.Update(attachErrMsg{err: errors.New("provider timeout")})
 	next := updated.(attachModel)
-	if !strings.Contains(next.renderConversationContent("conversation-1"), "room error: provider timeout") {
-		t.Fatalf("expected room error notice in conversation content, got:\n%s", next.renderConversationContent("conversation-1"))
+	if strings.Contains(next.renderConversationContent("conversation-1"), "provider timeout") {
+		t.Fatalf("expected room error to stay out of conversation content, got:\n%s", next.renderConversationContent("conversation-1"))
+	}
+	if !strings.Contains(next.renderHeader(), "provider timeout") {
+		t.Fatalf("expected room error in header status, got:\n%s", next.renderHeader())
 	}
 }
 
@@ -196,16 +194,69 @@ func TestAttachModelReasoningUpdateStaysOutOfConversation(t *testing.T) {
 	updated, _ := model.Update(attachStepStreamStartedMsg{events: make(chan tea.Msg)})
 	model = updated.(attachModel)
 
-	updated, _ = model.Update(attachReasoningMsg{agentID: "planner", text: "checking the workspace layout"})
+	updated, _ = model.Update(attachProgressMsg{event: application.TransientProgressEvent{
+		Provider: "codex", AgentID: "planner", Kind: "reasoning", Text: "checking the workspace layout",
+	}})
 	next := updated.(attachModel)
-	if !strings.Contains(next.renderHeader(), "planner reasoning: checking the workspace layout") {
-		t.Fatalf("expected reasoning in header, got:\n%s", next.renderHeader())
+	if !strings.Contains(next.renderInput(), "planner reasoning: checking the workspace layout") {
+		t.Fatalf("expected reasoning in activity block, got:\n%s", next.renderInput())
 	}
 	if !strings.Contains(next.renderBody(), "planner reasoning") || !strings.Contains(next.renderBody(), "checking the workspace") {
-		t.Fatalf("expected dedicated reasoning pane in body, got:\n%s", next.renderBody())
+		t.Fatalf("expected inline reasoning block in body, got:\n%s", next.renderBody())
 	}
 	if strings.Contains(next.renderConversationContent("conversation-1"), "checking the workspace layout") {
 		t.Fatalf("expected reasoning to stay out of conversation content, got:\n%s", next.renderConversationContent("conversation-1"))
+	}
+}
+
+func TestAttachModelReasoningFlagShowsReasoningInlineInConversation(t *testing.T) {
+	ui := platform.DefaultConfig().UI
+	model := newAttachModel(context.Background(), nil, liveViewOptions{SessionID: "session-1", Reasoning: true}, "conversation-1", ui)
+	model.agents = []domain.Agent{testAttachAgent("planner", 100)}
+	model.width, model.height = 120, 30
+	model.layout()
+
+	updated, _ := model.Update(attachStepStreamStartedMsg{events: make(chan tea.Msg)})
+	model = updated.(attachModel)
+	updated, _ = model.Update(attachProgressMsg{event: application.TransientProgressEvent{
+		Provider: "codex", AgentID: "planner", Kind: "reasoning", Text: "checking the workspace layout",
+	}})
+	next := updated.(attachModel)
+
+	rendered := next.renderConversationContent("conversation-1")
+	if !strings.Contains(rendered, "planner reasoning") || !strings.Contains(rendered, "checking the workspace layout") {
+		t.Fatalf("expected reasoning inline in conversation content, got:\n%s", rendered)
+	}
+	if strings.Contains(next.renderBody(), "No active reasoning.") {
+		t.Fatalf("expected no separate reasoning pane fallback, got:\n%s", next.renderBody())
+	}
+}
+
+func TestAttachModelReasoningStaysVisibleAfterStepCompletes(t *testing.T) {
+	ui := platform.DefaultConfig().UI
+	model := newAttachModel(context.Background(), nil, liveViewOptions{SessionID: "session-1", Reasoning: true}, "conversation-1", ui)
+	model.agents = []domain.Agent{testAttachAgent("planner", 100)}
+	model.width, model.height = 120, 30
+	model.layout()
+
+	updated, _ := model.Update(attachProgressMsg{event: application.TransientProgressEvent{
+		Provider: "codex", AgentID: "planner", Kind: "reasoning", Text: "checking the workspace layout",
+	}})
+	model = updated.(attachModel)
+
+	updated, _ = model.Update(attachStepProgressMsg{
+		state: attachRoomState{snapshot: runtimeadapter.SessionSnapshot{
+			Session: domain.Session{ID: "session-1", Mode: domain.SessionModeFree, Status: domain.SessionStatusRunning},
+		}, conversations: []domain.ConversationID{"conversation-1"}},
+		step:      application.SessionStepResult{Stepped: true, Agent: &model.agents[0]},
+		remaining: 1,
+	})
+	next := updated.(attachModel)
+	if len(next.progressByAgent) == 0 {
+		t.Fatalf("expected reasoning to remain visible after step completion")
+	}
+	if !strings.Contains(next.renderConversationContent("conversation-1"), "checking the workspace layout") {
+		t.Fatalf("expected reasoning to remain visible in conversation content, got:\n%s", next.renderConversationContent("conversation-1"))
 	}
 }
 
@@ -219,11 +270,8 @@ func TestAttachModelHidesReasoningPaneUntilProgressArrives(t *testing.T) {
 
 	updated, _ := model.Update(attachStepStreamStartedMsg{events: make(chan tea.Msg)})
 	next := updated.(attachModel)
-	if strings.Contains(next.renderBody(), "No reasoning emitted yet.") {
-		t.Fatalf("expected blank reasoning pane to stay hidden, got:\n%s", next.renderBody())
-	}
-	if next.layoutPreviewWidth != 0 {
-		t.Fatalf("expected no preview pane without progress text, got width %d", next.layoutPreviewWidth)
+	if strings.Contains(next.renderBody(), "planner reasoning") {
+		t.Fatalf("expected no reasoning block before progress text arrives, got:\n%s", next.renderBody())
 	}
 }
 
@@ -302,12 +350,17 @@ func TestAttachModelShowsActiveSandboxTaskProgressLine(t *testing.T) {
 		}},
 		conversations: []domain.ConversationID{"conversation-1"},
 	}
+	model.width, model.height = 120, 30
+	model.layout()
 
 	rendered := model.renderConversationContent("conversation-1")
-	if !strings.Contains(rendered, "sandbox task task-1 running on codex") {
-		t.Fatalf("expected active sandbox task line, got:\n%s", rendered)
+	if strings.Contains(rendered, "sandbox task task-1 running on codex") {
+		t.Fatalf("expected active sandbox task progress to stay out of transcript, got:\n%s", rendered)
 	}
-	if !strings.Contains(rendered, "Implement a polished on...") {
-		t.Fatalf("expected active sandbox task instruction summary, got:\n%s", rendered)
+	if !strings.Contains(model.renderInput(), "sandbox task task-1 running on codex") {
+		t.Fatalf("expected active sandbox task progress below input, got:\n%s", model.renderInput())
+	}
+	if !strings.Contains(model.renderInput(), "Implement a polished on...") {
+		t.Fatalf("expected active sandbox task instruction summary below input, got:\n%s", model.renderInput())
 	}
 }
