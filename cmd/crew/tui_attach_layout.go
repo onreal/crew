@@ -106,22 +106,7 @@ func (m attachModel) renderInputAssistText() string {
 }
 
 func (m attachModel) renderBody() string {
-	if m.layoutBodyHeight <= 0 {
-		return ""
-	}
-	body := ""
-	if strings.TrimSpace(m.lastRoomPlainContent) == "" || strings.Contains(m.lastRoomPlainContent, "No messages yet.") {
-		styled, _ := m.renderEmptyConversationPane(max(m.layoutMainWidth, 1))
-		body = styled
-	} else {
-		body = visibleTailLines(m.lastRoomContent, m.layoutBodyHeight)
-	}
-	if !m.options.Reasoning {
-		if _, _, ok := m.activeReasoningPane(); ok {
-			body = visibleTailLines(body+"\n\n"+m.renderReasoningPane(), m.layoutBodyHeight)
-		}
-	}
-	return lipgloss.NewStyle().Height(m.layoutBodyHeight).MaxHeight(m.layoutBodyHeight).Render(body)
+	return ""
 }
 
 func (m attachModel) renderFooter() string {
@@ -136,7 +121,7 @@ func (m *attachModel) syncViewportContent(_ bool) {
 }
 
 func attachFooterHelpText() string {
-	return "Enter send/accept | / commands | @ mentions | Up/Down history or assist | [/ ] send target | Tab accept | Ctrl+Y copy transcript | latest history stays on screen | Ctrl+L refresh"
+	return "Enter send/accept | / commands | @ mentions | Up/Down history or assist | [/ ] send target | Tab accept | Ctrl+Y copy transcript | full transcript stays visible | Ctrl+L refresh"
 }
 
 func (m attachModel) renderReasoningPane() string {
@@ -150,15 +135,4 @@ func (m attachModel) renderReasoningPane() string {
 		lines = append(lines, wrapRenderedText(m.styles.muted.Render(strings.TrimSpace(line)), width))
 	}
 	return strings.Join(lines, "\n\n")
-}
-
-func visibleTailLines(content string, maxLines int) string {
-	if maxLines <= 0 {
-		return ""
-	}
-	lines := strings.Split(content, "\n")
-	if len(lines) <= maxLines {
-		return strings.Join(lines, "\n")
-	}
-	return strings.Join(lines[len(lines)-maxLines:], "\n")
 }

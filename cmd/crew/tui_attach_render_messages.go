@@ -52,6 +52,36 @@ func (m attachModel) renderDisplayEvents(events []attachDisplayEvent) string {
 	return strings.Join(blocks, "\n\n")
 }
 
+func (m attachModel) renderPlainDisplayEvents(events []attachDisplayEvent) string {
+	blocks := make([]string, 0, len(events))
+	for idx := 0; idx < len(events); {
+		event := events[idx]
+		if event.Kind == "reasoning" {
+			blocks = append(blocks, m.renderPlainReasoningEvent(event))
+			idx++
+			continue
+		}
+		if event.Kind != "message" {
+			blocks = append(blocks, m.renderPlainNonMessageBlock(event))
+			idx++
+			continue
+		}
+		group := []attachDisplayEvent{event}
+		j := idx + 1
+		for j < len(events) && canGroupDisplayEvents(group[len(group)-1], events[j]) {
+			group = append(group, events[j])
+			j++
+		}
+		blocks = append(blocks, m.renderPlainMessageGroup(group))
+		idx = j
+	}
+
+	if m.ui.CompactMessages {
+		return strings.Join(blocks, "\n")
+	}
+	return strings.Join(blocks, "\n\n")
+}
+
 func canGroupDisplayEvents(a, b attachDisplayEvent) bool {
 	return a.Kind == "message" &&
 		b.Kind == "message" &&

@@ -160,8 +160,26 @@ func TestAttachModelStepProgressUsesDeferredContinuation(t *testing.T) {
 		t.Fatalf("expected pending ops to remain active, got %d", next.pendingOps)
 	}
 	msg := cmd()
-	continueMsg, ok := msg.(attachContinueAutoMsg)
-	if !ok {
+	var continueMsg attachContinueAutoMsg
+	switch typed := msg.(type) {
+	case attachContinueAutoMsg:
+		continueMsg = typed
+	case tea.BatchMsg:
+		found := false
+		for _, nested := range typed {
+			if nested == nil {
+				continue
+			}
+			if candidate, ok := nested().(attachContinueAutoMsg); ok {
+				continueMsg = candidate
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("expected deferred auto continuation msg in batch, got %#v", typed)
+		}
+	default:
 		t.Fatalf("expected deferred auto continuation msg, got %T", msg)
 	}
 	if continueMsg.remaining != 2 {
@@ -201,8 +219,8 @@ func TestAttachModelReasoningUpdateStaysOutOfConversation(t *testing.T) {
 	if !strings.Contains(next.renderInput(), "planner reasoning: checking the workspace layout") {
 		t.Fatalf("expected reasoning in activity block, got:\n%s", next.renderInput())
 	}
-	if !strings.Contains(next.renderBody(), "planner reasoning") || !strings.Contains(next.renderBody(), "checking the workspace") {
-		t.Fatalf("expected inline reasoning block in body, got:\n%s", next.renderBody())
+	if strings.TrimSpace(next.renderBody()) != "" {
+		t.Fatalf("expected attach body to stay empty because transcript prints above the prompt, got:\n%s", next.renderBody())
 	}
 	if strings.Contains(next.renderConversationContent("conversation-1"), "checking the workspace layout") {
 		t.Fatalf("expected reasoning to stay out of conversation content, got:\n%s", next.renderConversationContent("conversation-1"))
@@ -227,8 +245,8 @@ func TestAttachModelReasoningFlagShowsReasoningInlineInConversation(t *testing.T
 	if !strings.Contains(rendered, "planner reasoning") || !strings.Contains(rendered, "checking the workspace layout") {
 		t.Fatalf("expected reasoning inline in conversation content, got:\n%s", rendered)
 	}
-	if strings.Contains(next.renderBody(), "No active reasoning.") {
-		t.Fatalf("expected no separate reasoning pane fallback, got:\n%s", next.renderBody())
+	if strings.TrimSpace(next.renderBody()) != "" {
+		t.Fatalf("expected attach body to stay empty because transcript prints above the prompt, got:\n%s", next.renderBody())
 	}
 }
 

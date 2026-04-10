@@ -81,7 +81,7 @@ func TestAttachModelTranscriptRefreshStaysStableAcrossNoopPolls(t *testing.T) {
 	}
 }
 
-func TestAttachModelViewKeepsManagedChromeWithinWindowHeight(t *testing.T) {
+func TestAttachModelViewLeavesTranscriptOutOfManagedBody(t *testing.T) {
 	ui := platform.DefaultConfig().UI
 	now := time.Now().UTC()
 	model := newAttachModel(context.Background(), nil, liveViewOptions{SessionID: "session-1"}, "conversation-1", ui)
@@ -108,17 +108,17 @@ func TestAttachModelViewKeepsManagedChromeWithinWindowHeight(t *testing.T) {
 	model.syncViewportContent(false)
 	view := model.View()
 
-	if got := lipgloss.Height(view); got != model.height {
-		t.Fatalf("expected managed view height %d, got %d", model.height, got)
+	if got := lipgloss.Height(view); got > model.height {
+		t.Fatalf("expected managed view to remain compact now that transcript prints above the prompt, got %d", got)
 	}
-	if !strings.Contains(view, "message 18") {
-		t.Fatalf("expected latest transcript history to remain visible on screen, got:\n%s", view)
+	if strings.Contains(view, "message 1") || strings.Contains(view, "message 18") {
+		t.Fatalf("expected transcript messages to stay out of the managed body, got:\n%s", view)
 	}
 }
 
 func TestAttachFooterHelpMentionsLatestHistoryInsteadOfViewportScroll(t *testing.T) {
 	help := attachFooterHelpText()
-	if !strings.Contains(help, "latest history stays on screen") {
+	if !strings.Contains(help, "full transcript stays visible") {
 		t.Fatalf("expected footer help to mention on-screen history, got %q", help)
 	}
 	for _, removed := range []string{"PgUp", "PgDn", "Home", "End"} {

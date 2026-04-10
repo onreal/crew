@@ -118,7 +118,7 @@ When an agent requests sandbox work, CREW persists:
 
 This keeps text-agent reasoning and sandbox execution inside one auditable flow.
 
-When operators use `crew tui attach --reasoning`, those provider reasoning summaries remain room-local: the attach room now keeps each completed turn's reasoning block visible in the live chat view, including delegated Codex sandbox implementation turns, without persisting that transient provider output as canonical session history.
+When operators use `crew tui attach --reasoning`, those provider reasoning summaries remain room-local: the attach room now keeps each completed turn's reasoning block visible in the live chat view, including delegated Codex sandbox implementation turns, without persisting that transient provider output as canonical session history. The attach UI also prints transcript entries into terminal scrollback above the managed prompt surface instead of clipping them inside a fixed room body.
 
 ### 5. Providers do not define the runtime
 

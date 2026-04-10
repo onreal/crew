@@ -56,6 +56,8 @@ type attachModel struct {
 	activeStepEvents     <-chan tea.Msg
 	spinnerFrame         int
 	printedStreamCount   int
+	printedReasoningCount int
+	lastPrintedHeader    string
 	width                int
 	height               int
 	layoutMainWidth      int
@@ -271,9 +273,8 @@ func (m attachModel) View() string {
 	if m.width == 0 || m.height == 0 {
 		return "Loading crew TUI..."
 	}
-	return m.styles.frame.Width(m.layoutMainWidth).Height(m.height).Render(lipgloss.JoinVertical(
+	return m.styles.frame.Width(m.layoutMainWidth).Render(lipgloss.JoinVertical(
 		lipgloss.Left,
-		m.renderHeader(),
 		m.renderBody(),
 		m.renderInput(),
 		m.renderFooter(),

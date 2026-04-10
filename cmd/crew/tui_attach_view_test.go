@@ -45,8 +45,11 @@ func TestAttachModelViewStaysWithinConfiguredWidth(t *testing.T) {
 	if got := maxRenderedLineWidth(view); got > model.width {
 		t.Fatalf("expected rendered view width <= %d, got %d", model.width, got)
 	}
-	if !strings.Contains(view, "send=conversation-1") || !strings.Contains(view, "operator") {
-		t.Fatalf("expected send target header and transcript to remain visible, got:\n%s", view)
+	if strings.Contains(view, "send=conversation-1") {
+		t.Fatalf("expected room header to stay out of the managed bottom surface, got:\n%s", view)
+	}
+	if !strings.Contains(view, "Type a message or /help") {
+		t.Fatalf("expected compose area to remain visible, got:\n%s", view)
 	}
 }
 
@@ -65,7 +68,7 @@ func TestAttachModelViewIsBorderlessAndOmitsArtworkChrome(t *testing.T) {
 	}
 }
 
-func TestAttachModelEmptyStateShowsCrewArtwork(t *testing.T) {
+func TestAttachModelEmptyStateShowsComposeSurface(t *testing.T) {
 	ui := platform.DefaultConfig().UI
 	model := newAttachModel(context.Background(), nil, liveViewOptions{SessionID: "session-1"}, "conversation-1", ui)
 	model.width, model.height = 120, 24
@@ -73,8 +76,8 @@ func TestAttachModelEmptyStateShowsCrewArtwork(t *testing.T) {
 	model.syncViewportContent(false)
 
 	view := model.View()
-	if !strings.Contains(view, "CREW CLI") || !strings.Contains(view, "NOSTATE") {
-		t.Fatalf("expected empty room artwork in view, got:\n%s", view)
+	if !strings.Contains(view, "Type a message or /help") {
+		t.Fatalf("expected empty room to keep the compose surface visible, got:\n%s", view)
 	}
 }
 
