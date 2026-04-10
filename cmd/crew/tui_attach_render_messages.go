@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/charmbracelet/lipgloss"
 
@@ -202,9 +203,56 @@ func (m attachModel) renderMessageGroup(group []attachDisplayEvent) string {
 
 	bodies := make([]string, 0, len(group))
 	for _, event := range group {
-		bodies = append(bodies, m.styles.messageBody.Render(event.Body))
+		bodies = append(bodies, m.styles.messageBody.Render(m.renderMentionStyledBody(event.Body)))
 	}
 	return timestamp + header + "\n" + strings.Join(bodies, "\n")
+}
+
+func (m attachModel) renderMentionStyledBody(body string) string {
+	if body == "" || len(m.agents) == 0 {
+		return body
+	}
+
+	var rendered strings.Builder
+	for idx := 0; idx < len(body); {
+		if body[idx] != '@' {
+			rendered.WriteByte(body[idx])
+			idx++
+			continue
+		}
+
+		end := idx + 1
+		for end < len(body) && isMentionIdentifierChar(rune(body[end])) {
+			end++
+		}
+		if end == idx+1 {
+			rendered.WriteByte(body[idx])
+			idx++
+			continue
+		}
+
+		token := body[idx:end]
+		if color, ok := m.mentionColor(token[1:]); ok {
+			rendered.WriteString(lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(color)).Render(token))
+		} else {
+			rendered.WriteString(token)
+		}
+		idx = end
+	}
+	return rendered.String()
+}
+
+func (m attachModel) mentionColor(name string) (string, bool) {
+	for _, agent := range m.agents {
+		if strings.EqualFold(name, string(agent.ID)) {
+			return m.lookupAgentColor(string(agent.ID)), true
+		}
+	}
+	return "", false
+}
+
+func isMentionIdentifierChar(ch rune) bool {
+	return unicode.IsLetter(ch) || unicode.IsDigit(ch) || ch == '_' || ch == '-'
 }
 
 func (m attachModel) activeTaskDisplayEvents(conversationID domain.ConversationID) []attachDisplayEvent {

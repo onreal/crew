@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	runtimeadapter "crew/internal/adapters/runtime"
 	"crew/internal/application"
@@ -130,5 +131,35 @@ func TestAttachModelCtrlYCopiesCurrentTUISnapshot(t *testing.T) {
 		if !strings.Contains(copied, expected) {
 			t.Fatalf("expected %q in copied snapshot, got:\n%s", expected, copied)
 		}
+	}
+}
+
+func TestAttachModelRenderConversationHighlightsAgentMentions(t *testing.T) {
+	ui := platform.DefaultConfig().UI
+	model := newAttachModel(context.Background(), nil, liveViewOptions{SessionID: "session-1"}, "conversation-1", ui)
+	model.agents = []domain.Agent{testAttachAgent("planner", 100), testAttachAgent("reviewer", 90)}
+	model.room = attachRoomState{snapshot: runtimeadapter.SessionSnapshot{
+		Session: domain.Session{ID: "session-1", Mode: domain.SessionModeFree, Status: domain.SessionStatusRunning},
+		Stream: []runtimeadapter.StreamEntry{{
+			Payload: application.MessageDispatchedEvent{Message: domain.Message{
+				ID:             "message-1",
+				SessionID:      "session-1",
+				ConversationID: "conversation-1",
+				Sender:         domain.AgentSender("writer"),
+				Channel:        domain.MessageChannelBroadcast,
+				Kind:           domain.MessageKindUtterance,
+				Body:           "Please sync with @planner and then send review to @reviewer.",
+			}},
+		}},
+	}, conversations: []domain.ConversationID{"conversation-1"}}
+
+	rendered := model.renderConversationContent("conversation-1")
+	wantPlanner := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(model.lookupAgentColor("planner"))).Render("@planner")
+	wantReviewer := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(model.lookupAgentColor("reviewer"))).Render("@reviewer")
+	if !strings.Contains(rendered, wantPlanner) {
+		t.Fatalf("expected planner mention to be colorized, got:\n%s", rendered)
+	}
+	if !strings.Contains(rendered, wantReviewer) {
+		t.Fatalf("expected reviewer mention to be colorized, got:\n%s", rendered)
 	}
 }
