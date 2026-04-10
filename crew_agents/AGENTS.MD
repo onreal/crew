@@ -18,6 +18,7 @@ This directory lets `crew` run directly inside the repository without depending 
 - agent definitions here must stay valid against the domain `Agent` contract
 - the shipped root roster is the same operator-facing bootstrap catalog used by `crew init`, so provider/model/reasoning choices here are product defaults rather than test-only placeholders
 - the default repository roster models a deliberate collaboration graph: `planner` is the front-door orchestration agent for ordinary user broadcasts, `writer` owns real implementation work and may use Codex sandbox delegation for file changes, and `reviewer` remains a mention-driven review specialist
+- the shipped `writer` example now makes its sandbox preference explicit with `sandbox_workspace_mode: copied`, so operators can discover and change agent-level workspace-mode overrides directly in the catalog
 - `writer` may still thread completion replies back to `planner` so planner-owned obligations can close cleanly, even though writer's visible specialist handoff remains `@reviewer`
 - prompts in this catalog must avoid speculative `@agent` mentions; any exact `@agent` token is treated as a real handoff by the runtime, so handles should appear only when the agent is actually transferring work
 - `allowed_handoffs` is business-significant policy, not display metadata; it constrains which agent-to-agent routes may create direct replies or outstanding obligations

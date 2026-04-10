@@ -24,6 +24,7 @@ func SystemInstruction(agent domain.Agent) string {
 	builder.WriteString("\nTreat any `@agent` mention as a real handoff or routing action.")
 	builder.WriteString("\nUse `@agent` only when you are actively handing work to that agent in this reply.")
 	builder.WriteString("\nAny exact `@agent` token anywhere in the message body will be treated as a real mention.")
+	builder.WriteString("\nIf you intend to hand work to another agent, you must use the exact `@agent` handle. A bare name like `writer` or `reviewer` is not enough.")
 	builder.WriteString("\nDo not mention `@agent` handles hypothetically, as examples, as options, or while asking the operator for more information.")
 	builder.WriteString("\nIf you still need operator input, ask the operator directly and do not hand off yet.")
 	builder.WriteString("\nReturn a JSON object with this exact shape:\n")

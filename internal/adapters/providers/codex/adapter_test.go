@@ -210,6 +210,80 @@ printf 'changed' > "$WORKDIR/notes.txt"
 	}
 }
 
+func TestRuntimeExecuteTaskUsesTaskWorkspaceModeOverride(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	sourceRoot := filepath.Join(root, "source")
+	sandboxRoot := filepath.Join(root, "sandboxes")
+	if err := os.MkdirAll(sourceRoot, 0o755); err != nil {
+		t.Fatalf("MkdirAll(sourceRoot) error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(sourceRoot, "notes.txt"), []byte("original"), 0o644); err != nil {
+		t.Fatalf("WriteFile(notes.txt) error = %v", err)
+	}
+
+	binaryPath := writeFakeCodexScript(t, root, `#!/bin/sh
+OUTPUT=""
+WORKDIR=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --output-last-message)
+      OUTPUT="$2"
+      shift 2
+      ;;
+    --cd)
+      WORKDIR="$2"
+      shift 2
+      ;;
+    *)
+      shift
+      ;;
+  esac
+done
+printf 'in place' > "$OUTPUT"
+printf 'changed in place' > "$WORKDIR/notes.txt"
+`)
+
+	runtime, err := New(Config{
+		BinaryPath:    binaryPath,
+		SandboxRoot:   sandboxRoot,
+		WorkspaceMode: sandbox.WorkspaceModeCopied,
+		Timeout:       5 * time.Second,
+	})
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	result, err := runtime.ExecuteTask(context.Background(), application.SandboxTask{
+		ID:                "task-override-mode",
+		SessionID:         "session-1",
+		ConversationID:    "conversation-1",
+		AssignedProvider:  application.AgentProviderClassSandboxedRuntime,
+		RuntimeName:       "codex",
+		WorkspaceRoot:     sourceRoot,
+		PermissionProfile: application.SandboxPermissionPatch,
+		Instruction:       "update notes",
+		Metadata:          map[string]any{"sandbox_workspace_mode": sandbox.WorkspaceModeInPlace},
+		Status:            application.SandboxTaskStatusPending,
+		CreatedAt:         time.Date(2026, 3, 20, 10, 0, 0, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("ExecuteTask() error = %v", err)
+	}
+
+	if result.Metadata["workspace_mode"] != sandbox.WorkspaceModeInPlace {
+		t.Fatalf("expected in_place workspace metadata, got %+v", result.Metadata)
+	}
+	content, err := os.ReadFile(filepath.Join(sourceRoot, "notes.txt"))
+	if err != nil {
+		t.Fatalf("ReadFile(notes.txt) error = %v", err)
+	}
+	if string(content) != "changed in place" {
+		t.Fatalf("expected source workspace to change in place, got %q", string(content))
+	}
+}
+
 func TestTextProviderGenerateUsesCodexExec(t *testing.T) {
 	t.Parallel()
 

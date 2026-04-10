@@ -17,9 +17,15 @@ import (
 type Workspace struct {
 	TaskRoot       string
 	ExecutionRoot  string
+	Mode           string
 	initialState   map[string]fileDigest
 	ignoredAbsDirs []string
 }
+
+const (
+	WorkspaceModeCopied  = "copied"
+	WorkspaceModeInPlace = "in_place"
+)
 
 type fileDigest struct {
 	mode fs.FileMode
@@ -27,24 +33,21 @@ type fileDigest struct {
 	sha  string
 }
 
-func PrepareWorkspace(taskID application.AgentTaskID, sourceRoot, sandboxRoot string) (Workspace, error) {
+func PrepareWorkspace(taskID application.AgentTaskID, sourceRoot, sandboxRoot, workspaceMode string) (Workspace, error) {
 	sourceRoot = filepath.Clean(sourceRoot)
 	sandboxRoot = filepath.Clean(sandboxRoot)
+	workspaceMode = strings.TrimSpace(workspaceMode)
+	if workspaceMode == "" {
+		workspaceMode = WorkspaceModeCopied
+	}
 
 	if strings.TrimSpace(sourceRoot) == "" {
 		return Workspace{}, fmt.Errorf("%w: source workspace root must not be empty", ErrSetupFailed)
-	}
-	if strings.TrimSpace(sandboxRoot) == "" {
-		return Workspace{}, fmt.Errorf("%w: sandbox root must not be empty", ErrSetupFailed)
 	}
 
 	absSourceRoot, err := filepath.Abs(sourceRoot)
 	if err != nil {
 		return Workspace{}, fmt.Errorf("%w: resolve source workspace root: %v", ErrSetupFailed, err)
-	}
-	absSandboxRoot, err := filepath.Abs(sandboxRoot)
-	if err != nil {
-		return Workspace{}, fmt.Errorf("%w: resolve sandbox root: %v", ErrSetupFailed, err)
 	}
 
 	info, err := os.Stat(absSourceRoot)
@@ -53,6 +56,27 @@ func PrepareWorkspace(taskID application.AgentTaskID, sourceRoot, sandboxRoot st
 	}
 	if !info.IsDir() {
 		return Workspace{}, fmt.Errorf("%w: source workspace root %q is not a directory", ErrSetupFailed, absSourceRoot)
+	}
+	if workspaceMode == WorkspaceModeInPlace {
+		initialState, err := captureWorkspaceState(absSourceRoot)
+		if err != nil {
+			return Workspace{}, err
+		}
+		return Workspace{
+			ExecutionRoot: absSourceRoot,
+			Mode:          workspaceMode,
+			initialState:  initialState,
+		}, nil
+	}
+	if workspaceMode != WorkspaceModeCopied {
+		return Workspace{}, fmt.Errorf("%w: unsupported workspace mode %q", ErrSetupFailed, workspaceMode)
+	}
+	if strings.TrimSpace(sandboxRoot) == "" {
+		return Workspace{}, fmt.Errorf("%w: sandbox root must not be empty", ErrSetupFailed)
+	}
+	absSandboxRoot, err := filepath.Abs(sandboxRoot)
+	if err != nil {
+		return Workspace{}, fmt.Errorf("%w: resolve sandbox root: %v", ErrSetupFailed, err)
 	}
 
 	taskRoot := filepath.Join(absSandboxRoot, sandboxTaskDirName(taskID))
@@ -81,6 +105,7 @@ func PrepareWorkspace(taskID application.AgentTaskID, sourceRoot, sandboxRoot st
 	return Workspace{
 		TaskRoot:       taskRoot,
 		ExecutionRoot:  executionRoot,
+		Mode:           workspaceMode,
 		initialState:   initialState,
 		ignoredAbsDirs: nil,
 	}, nil

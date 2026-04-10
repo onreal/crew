@@ -2,7 +2,9 @@ package main
 
 import (
 	"fmt"
+	"slices"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/lipgloss"
 
@@ -78,6 +80,7 @@ func (m attachModel) displayEvents(conversationID domain.ConversationID) []attac
 		}
 		events = append(events, notice)
 	}
+	events = append(events, m.activeTaskDisplayEvents(conversationID)...)
 	return events
 }
 
@@ -202,6 +205,70 @@ func (m attachModel) renderMessageGroup(group []attachDisplayEvent) string {
 		bodies = append(bodies, m.styles.messageBody.Render(event.Body))
 	}
 	return timestamp + header + "\n" + strings.Join(bodies, "\n")
+}
+
+func (m attachModel) activeTaskDisplayEvents(conversationID domain.ConversationID) []attachDisplayEvent {
+	if len(m.room.tasks) == 0 {
+		return nil
+	}
+
+	now := time.Now().UTC()
+	tasks := append([]application.SandboxTask(nil), m.room.tasks...)
+	slices.SortFunc(tasks, func(a, b application.SandboxTask) int {
+		left := a.CreatedAt
+		if a.StartedAt != nil {
+			left = *a.StartedAt
+		}
+		right := b.CreatedAt
+		if b.StartedAt != nil {
+			right = *b.StartedAt
+		}
+		return left.Compare(right)
+	})
+
+	events := make([]attachDisplayEvent, 0, len(tasks))
+	for _, task := range tasks {
+		if conversationID != "" && task.ConversationID != conversationID {
+			continue
+		}
+		if task.Status != application.SandboxTaskStatusPending && task.Status != application.SandboxTaskStatusRunning {
+			continue
+		}
+		recordedAt := task.CreatedAt
+		if task.StartedAt != nil {
+			recordedAt = *task.StartedAt
+		}
+		events = append(events, attachDisplayEvent{
+			Kind:           "task",
+			RecordedAt:     recordedAt,
+			ConversationID: task.ConversationID,
+			Sender:         "sandbox",
+			Body:           formatActiveTaskLine(task, now),
+		})
+	}
+	return events
+}
+
+func formatActiveTaskLine(task application.SandboxTask, now time.Time) string {
+	status := string(task.Status)
+	if task.Status == application.SandboxTaskStatusPending {
+		if summary := trimForSidebar(task.Instruction); summary != "" {
+			return fmt.Sprintf("sandbox task %s pending on %s: %s", task.ID, task.RuntimeName, summary)
+		}
+		return fmt.Sprintf("sandbox task %s pending on %s", task.ID, task.RuntimeName)
+	}
+
+	elapsed := now.Sub(task.CreatedAt).Round(time.Second)
+	if task.StartedAt != nil {
+		elapsed = now.Sub(*task.StartedAt).Round(time.Second)
+	}
+	if elapsed < 0 {
+		elapsed = 0
+	}
+	if summary := trimForSidebar(task.Instruction); summary != "" {
+		return fmt.Sprintf("sandbox task %s %s on %s for %s: %s", task.ID, status, task.RuntimeName, elapsed, summary)
+	}
+	return fmt.Sprintf("sandbox task %s %s on %s for %s", task.ID, status, task.RuntimeName, elapsed)
 }
 
 func (m attachModel) renderConversationPreviews() string {

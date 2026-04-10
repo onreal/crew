@@ -36,7 +36,7 @@ func TestPrepareWorkspaceCopiesSourceAndCapturesChangedArtifacts(t *testing.T) {
 		t.Fatalf("WriteFile(stale.txt) error = %v", err)
 	}
 
-	workspace, err := PrepareWorkspace(application.AgentTaskID("task-1"), sourceRoot, sandboxRoot)
+	workspace, err := PrepareWorkspace(application.AgentTaskID("task-1"), sourceRoot, sandboxRoot, WorkspaceModeCopied)
 	if err != nil {
 		t.Fatalf("PrepareWorkspace() error = %v", err)
 	}
@@ -96,7 +96,7 @@ func TestPrepareWorkspaceDoesNotUseRawTaskIDAsFilesystemPath(t *testing.T) {
 		t.Fatalf("WriteFile(notes.txt) error = %v", err)
 	}
 
-	workspace, err := PrepareWorkspace(application.AgentTaskID("../live-repo"), sourceRoot, sandboxRoot)
+	workspace, err := PrepareWorkspace(application.AgentTaskID("../live-repo"), sourceRoot, sandboxRoot, WorkspaceModeCopied)
 	if err != nil {
 		t.Fatalf("PrepareWorkspace() error = %v", err)
 	}
@@ -137,11 +137,42 @@ func TestPrepareWorkspaceRejectsSourceSymlinks(t *testing.T) {
 		t.Fatalf("Symlink() error = %v", err)
 	}
 
-	_, err := PrepareWorkspace(application.AgentTaskID("task-1"), sourceRoot, sandboxRoot)
+	_, err := PrepareWorkspace(application.AgentTaskID("task-1"), sourceRoot, sandboxRoot, WorkspaceModeCopied)
 	if err == nil {
 		t.Fatal("expected PrepareWorkspace() to reject source symlink")
 	}
 	if !errors.Is(err, ErrPolicyDenied) {
 		t.Fatalf("expected ErrPolicyDenied, got %v", err)
+	}
+}
+
+func TestPrepareWorkspaceInPlaceUsesSourceWorkspaceDirectly(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	sourceRoot := filepath.Join(root, "source")
+	if err := os.MkdirAll(filepath.Join(sourceRoot, "nested"), 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(sourceRoot, "notes.txt"), []byte("original"), 0o644); err != nil {
+		t.Fatalf("WriteFile(notes.txt) error = %v", err)
+	}
+
+	workspace, err := PrepareWorkspace(application.AgentTaskID("task-1"), sourceRoot, filepath.Join(root, "ignored"), WorkspaceModeInPlace)
+	if err != nil {
+		t.Fatalf("PrepareWorkspace() error = %v", err)
+	}
+	if workspace.ExecutionRoot != sourceRoot || workspace.TaskRoot != "" {
+		t.Fatalf("expected in-place workspace to use source root directly, got %+v", workspace)
+	}
+	if err := os.WriteFile(filepath.Join(sourceRoot, "notes.txt"), []byte("updated"), 0o644); err != nil {
+		t.Fatalf("WriteFile(updated notes) error = %v", err)
+	}
+	artifacts, err := workspace.ChangedArtifacts()
+	if err != nil {
+		t.Fatalf("ChangedArtifacts() error = %v", err)
+	}
+	if len(artifacts) != 1 || artifacts[0].Path != "notes.txt" || artifacts[0].Description != "modified" {
+		t.Fatalf("unexpected artifacts %+v", artifacts)
 	}
 }

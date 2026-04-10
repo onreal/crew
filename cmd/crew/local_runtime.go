@@ -128,6 +128,7 @@ func resolveSandboxProviders(cfg platform.SandboxConfig) map[string]runtimeadapt
 			BinaryPath:      strings.TrimSpace(provider.Binary),
 			Model:           strings.TrimSpace(provider.Model),
 			SandboxRoot:     strings.TrimSpace(provider.WorkspaceRoot),
+			WorkspaceMode:   strings.TrimSpace(provider.WorkspaceMode),
 			Timeout:         time.Duration(provider.TimeoutMillis) * time.Millisecond,
 			AdditionalWrite: append([]string(nil), provider.AdditionalWrite...),
 		}

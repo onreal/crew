@@ -124,6 +124,7 @@ sandbox:
       binary: /usr/local/bin/codex
       model: codex-mini
       workspace_root: /tmp/crew-sandboxes
+      workspace_mode: in_place
       timeout_millis: 120000
 vector:
   dimensions: 8
@@ -191,6 +192,9 @@ ui:
 	}
 	if loaded.Config.Sandbox.Providers["codex"].WorkspaceRoot != "/tmp/crew-sandboxes" {
 		t.Fatalf("expected sandbox workspace root, got %q", loaded.Config.Sandbox.Providers["codex"].WorkspaceRoot)
+	}
+	if loaded.Config.Sandbox.Providers["codex"].WorkspaceMode != "in_place" {
+		t.Fatalf("expected sandbox workspace mode in_place, got %q", loaded.Config.Sandbox.Providers["codex"].WorkspaceMode)
 	}
 	if loaded.Config.Vector.Dimensions != 8 {
 		t.Fatalf("expected vector dimensions 8, got %d", loaded.Config.Vector.Dimensions)
@@ -290,11 +294,26 @@ func TestConfigValidateAllowsCodexSandboxProviderWithoutTimeout(t *testing.T) {
 	cfg.Sandbox.Providers["codex"] = SandboxProviderConfig{
 		Binary:        "codex",
 		WorkspaceRoot: "./var/sandboxes",
+		WorkspaceMode: "copied",
 		TimeoutMillis: 0,
 	}
 
 	if err := cfg.Validate(); err != nil {
 		t.Fatalf("expected Validate() to allow codex sandbox timeout 0, got %v", err)
+	}
+}
+
+func TestConfigValidateAllowsInPlaceSandboxWorkspaceMode(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Sandbox.DefaultProvider = "codex"
+	cfg.Sandbox.Providers["codex"] = SandboxProviderConfig{
+		Binary:        "codex",
+		WorkspaceMode: "in_place",
+		TimeoutMillis: 0,
+	}
+
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("expected Validate() to allow in_place sandbox mode, got %v", err)
 	}
 }
 

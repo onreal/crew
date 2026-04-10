@@ -17,6 +17,7 @@ type Config struct {
 	BinaryPath      string
 	Model           string
 	SandboxRoot     string
+	WorkspaceMode   string
 	Timeout         time.Duration
 	AdditionalWrite []string
 }
@@ -25,6 +26,7 @@ type Runtime struct {
 	binaryPath      string
 	model           string
 	sandboxRoot     string
+	workspaceMode   string
 	timeout         time.Duration
 	additionalWrite []string
 }
@@ -34,18 +36,23 @@ func New(cfg Config) (*Runtime, error) {
 	if binaryPath == "" {
 		binaryPath = "codex"
 	}
-	if strings.TrimSpace(cfg.SandboxRoot) == "" {
+	workspaceMode := strings.TrimSpace(cfg.WorkspaceMode)
+	if workspaceMode == "" {
+		workspaceMode = sandbox.WorkspaceModeCopied
+	}
+	if workspaceMode != sandbox.WorkspaceModeCopied && workspaceMode != sandbox.WorkspaceModeInPlace {
+		return nil, fmt.Errorf("codex workspace mode must be copied or in_place, got %q", cfg.WorkspaceMode)
+	}
+	if workspaceMode == sandbox.WorkspaceModeCopied && strings.TrimSpace(cfg.SandboxRoot) == "" {
 		return nil, fmt.Errorf("codex sandbox root must not be empty")
 	}
 	timeout := cfg.Timeout
-	if timeout <= 0 {
-		timeout = 5 * time.Minute
-	}
 
 	return &Runtime{
 		binaryPath:      binaryPath,
 		model:           strings.TrimSpace(cfg.Model),
 		sandboxRoot:     strings.TrimSpace(cfg.SandboxRoot),
+		workspaceMode:   workspaceMode,
 		timeout:         timeout,
 		additionalWrite: append([]string(nil), cfg.AdditionalWrite...),
 	}, nil
@@ -64,13 +71,25 @@ func (r *Runtime) ExecuteTask(ctx context.Context, task application.SandboxTask)
 	if strings.TrimSpace(task.SandboxRoot) != "" {
 		sandboxRoot = strings.TrimSpace(task.SandboxRoot)
 	}
+	workspaceMode := r.workspaceMode
+	if override := strings.TrimSpace(metadataString(task.Metadata, "sandbox_workspace_mode")); override != "" {
+		workspaceMode = override
+	}
 
-	workspace, err := sandbox.PrepareWorkspace(task.ID, task.WorkspaceRoot, sandboxRoot)
+	workspace, err := sandbox.PrepareWorkspace(task.ID, task.WorkspaceRoot, sandboxRoot, workspaceMode)
 	if err != nil {
 		return failedResult(err), err
 	}
 
-	outputPath := filepath.Join(workspace.TaskRoot, "codex-last-message.txt")
+	outputDir := workspace.TaskRoot
+	if strings.TrimSpace(outputDir) == "" {
+		outputDir, err = os.MkdirTemp("", "crew-codex-task-*")
+		if err != nil {
+			return failedResult(err), err
+		}
+		defer os.RemoveAll(outputDir)
+	}
+	outputPath := filepath.Join(outputDir, "codex-last-message.txt")
 	args := []string{
 		"exec",
 		"--skip-git-repo-check",
@@ -121,6 +140,7 @@ func (r *Runtime) ExecuteTask(ctx context.Context, task application.SandboxTask)
 			"binary_path":         r.binaryPath,
 			"model":               r.model,
 			"sandbox_root":        sandboxRoot,
+			"workspace_mode":      workspace.Mode,
 			"execution_workspace": workspace.ExecutionRoot,
 			"command":             append([]string{r.binaryPath}, args...),
 			"stdout":              truncate(commandResult.Stdout, 16000),
@@ -179,4 +199,12 @@ func truncate(value string, limit int) string {
 		return value
 	}
 	return value[:limit]
+}
+
+func metadataString(metadata map[string]any, key string) string {
+	if metadata == nil {
+		return ""
+	}
+	value, _ := metadata[key].(string)
+	return strings.TrimSpace(value)
 }

@@ -70,6 +70,7 @@ type SandboxConfig struct {
 	Binary        string `mapstructure:"binary" json:"binary,omitempty"`
 	Model         string `mapstructure:"model" json:"model,omitempty"`
 	WorkspaceRoot string `mapstructure:"workspace_root" json:"workspace_root,omitempty"`
+	WorkspaceMode string `mapstructure:"workspace_mode" json:"workspace_mode,omitempty"`
 	TimeoutMillis int    `mapstructure:"timeout_millis" json:"timeout_millis,omitempty"`
 }
 
@@ -77,6 +78,7 @@ type SandboxProviderConfig struct {
 	Binary          string   `mapstructure:"binary" json:"binary"`
 	Model           string   `mapstructure:"model" json:"model"`
 	WorkspaceRoot   string   `mapstructure:"workspace_root" json:"workspace_root"`
+	WorkspaceMode   string   `mapstructure:"workspace_mode" json:"workspace_mode"`
 	TimeoutMillis   int      `mapstructure:"timeout_millis" json:"timeout_millis"`
 	AdditionalWrite []string `mapstructure:"additional_write" json:"additional_write"`
 }
@@ -158,6 +160,7 @@ func DefaultConfig() Config {
 					Binary:        "codex",
 					Model:         "",
 					WorkspaceRoot: "./var/sandboxes",
+					WorkspaceMode: "copied",
 					TimeoutMillis: 0,
 				},
 			},
@@ -325,7 +328,14 @@ func (c Config) Validate() error {
 		if strings.TrimSpace(name) == "" {
 			return errors.New("sandbox.providers must not contain empty provider names")
 		}
-		if strings.TrimSpace(provider.WorkspaceRoot) == "" {
+		mode := strings.TrimSpace(provider.WorkspaceMode)
+		if mode == "" {
+			mode = "copied"
+		}
+		if mode != "copied" && mode != "in_place" {
+			return fmt.Errorf("sandbox.providers.%s.workspace_mode must be one of copied or in_place, got %q", name, provider.WorkspaceMode)
+		}
+		if mode == "copied" && strings.TrimSpace(provider.WorkspaceRoot) == "" {
 			return fmt.Errorf("sandbox.providers.%s.workspace_root must not be empty", name)
 		}
 		if provider.TimeoutMillis < 1 {
@@ -445,6 +455,9 @@ func (c *Config) normalizeSandboxConfig() {
 	}
 	if strings.TrimSpace(c.Sandbox.WorkspaceRoot) != "" {
 		legacyCfg.WorkspaceRoot = c.Sandbox.WorkspaceRoot
+	}
+	if strings.TrimSpace(c.Sandbox.WorkspaceMode) != "" {
+		legacyCfg.WorkspaceMode = c.Sandbox.WorkspaceMode
 	}
 	if c.Sandbox.TimeoutMillis > 0 {
 		legacyCfg.TimeoutMillis = c.Sandbox.TimeoutMillis

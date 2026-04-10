@@ -158,6 +158,7 @@ system_prompt: Only respond when explicitly targeted by the operator, planner, o
 provider: codex
 model: gpt-5.4
 reasoning_effort: medium
+sandbox_workspace_mode: in_place
 color: "#34d399"
 tools: []
 policies:

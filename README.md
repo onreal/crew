@@ -358,12 +358,13 @@ Notes:
 - `sandbox.providers.<name>.binary` optionally overrides the CLI binary path; Codex defaults to `codex`
 - `sandbox.providers.<name>.model` optionally selects a provider-specific model for sandbox execution
 - `sandbox.source_workspace_root` is the source tree copied into per-task sandboxes for autonomous agent delegation
-- `sandbox.providers.<name>.workspace_root` is the root under which copied per-task execution workspaces are created for that runtime
+- `sandbox.providers.<name>.workspace_mode` selects `copied` or `in_place`; `copied` uses `workspace_root`, while `in_place` executes directly in the workspace where the operator is running `crew`
 - `sandbox.permission_profile` maps to the provider sandbox mode; it does not change canonical runtime policy rules
 - `sandbox.providers.<name>.timeout_millis` is the per-runtime execution timeout; `sandbox.providers.codex.timeout_millis: 0` disables the Codex sandbox timeout
 - sandbox tasks operate on copied workspaces inside `sandbox.providers.<name>.workspace_root`; they do not mutate the source workspace directly in this phase
 - free-mode sandbox delegation no longer chooses a runtime globally; each agent may now name its own `delegation_runtime`
 - an agent may also set `sandbox_workspace_root` to force its delegated tasks into its own sandbox root instead of the runtime default
+- an agent may also set `sandbox_workspace_mode` to force delegated work into `copied` or `in_place` mode instead of the runtime default; the shipped `writer` example uses the value declared in `./crew_agents/writer.yaml`
 - `provider: codex` and `delegation_runtime: codex` are different controls: the first chooses who speaks, the second chooses who executes delegated sandbox tasks
 - copied sandbox preparation rejects symlinked source entries in the source workspace for now, because recreated symlinks would break workspace isolation
 - sandbox delegation is policy-gated by the selected agent; tool access alone does not imply the agent may delegate to every runtime

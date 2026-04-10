@@ -71,6 +71,7 @@ func TestStoreRepositoriesRoundTrip(t *testing.T) {
 		ReasoningEffort:      "medium",
 		DelegationRuntime:    "codex",
 		SandboxWorkspaceRoot: "/tmp/planner-sandbox",
+		SandboxWorkspaceMode: "in_place",
 		Tools:                []string{"search"},
 		Policies: domain.AgentPolicy{
 			AllowBroadcast:         true,
@@ -183,6 +184,9 @@ func TestStoreRepositoriesRoundTrip(t *testing.T) {
 	}
 	if gotAgent.SandboxWorkspaceRoot != agent.SandboxWorkspaceRoot {
 		t.Fatalf("expected sandbox workspace root %q, got %q", agent.SandboxWorkspaceRoot, gotAgent.SandboxWorkspaceRoot)
+	}
+	if gotAgent.SandboxWorkspaceMode != agent.SandboxWorkspaceMode {
+		t.Fatalf("expected sandbox workspace mode %q, got %q", agent.SandboxWorkspaceMode, gotAgent.SandboxWorkspaceMode)
 	}
 
 	gotWorkflow, err := store.Workflows().GetByID(ctx, workflow.ID)

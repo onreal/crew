@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -691,6 +692,164 @@ func TestFreeModeServiceTreatsAgentMentionsAsRealHandoffs(t *testing.T) {
 	}
 }
 
+func TestFreeModeServiceNormalizesBareSentenceHandoffToHandle(t *testing.T) {
+	repos := newFixture()
+	sessionService := NewSessionService(repos.sessions, repos.outbox, repos.tx, repos.clock, repos.ids)
+	messageService := NewMessageService(repos.sessions, repos.messages, repos.agents, repos.vector, repos.outbox, repos.tx, repos.clock, repos.ids)
+	freeModeService := NewFreeModeService(repos.sessions, repos.messages, repos.agents, fakeOrchestrator{}, bareHandoffLLMProvider{}, messageService)
+
+	session, err := sessionService.Create(context.Background(), CreateSessionCommand{Mode: domain.SessionModeFree})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	if _, err := sessionService.Start(context.Background(), SessionIDCommand{SessionID: session.ID}); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	if _, err := messageService.Dispatch(context.Background(), DispatchMessageCommand{
+		SessionID:      session.ID,
+		ConversationID: "conversation-1",
+		Sender:         domain.UserSender("operator"),
+		Channel:        domain.MessageChannelUser,
+		Kind:           domain.MessageKindUtterance,
+		Body:           "please plan the work",
+	}); err != nil {
+		t.Fatalf("Dispatch() error = %v", err)
+	}
+
+	first, err := freeModeService.Step(context.Background(), StepSessionCommand{SessionID: session.ID})
+	if err != nil {
+		t.Fatalf("first Step() error = %v", err)
+	}
+	if first.Message == nil || !strings.Contains(first.Message.Body, "@reviewer") {
+		t.Fatalf("expected bare reviewer handoff to be normalized, got %+v", first.Message)
+	}
+	second, err := freeModeService.Step(context.Background(), StepSessionCommand{SessionID: session.ID})
+	if err != nil {
+		t.Fatalf("second Step() error = %v", err)
+	}
+	if second.Agent == nil || second.Agent.ID != "reviewer" {
+		t.Fatalf("expected reviewer to become eligible after normalization, got %+v", second)
+	}
+}
+
+func TestFreeModeServiceRoutesCompletedAgentReplyBackToUser(t *testing.T) {
+	repos := newFixture()
+	service := NewSessionService(repos.sessions, repos.outbox, repos.tx, repos.clock, repos.ids)
+	messageService := NewMessageService(repos.sessions, repos.messages, repos.agents, repos.vector, repos.outbox, repos.tx, repos.clock, repos.ids)
+	freeMode := NewFreeModeService(
+		repos.sessions,
+		repos.messages,
+		repos.agents,
+		fakeOrchestrator{},
+		obligationAwareLLMProvider{},
+		messageService,
+	)
+
+	session, err := service.Create(context.Background(), CreateSessionCommand{Mode: domain.SessionModeFree})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	if _, err := service.Start(context.Background(), SessionIDCommand{SessionID: session.ID}); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	if _, err := messageService.Dispatch(context.Background(), DispatchMessageCommand{
+		SessionID:      session.ID,
+		ConversationID: "conversation-1",
+		Sender:         domain.UserSender("operator"),
+		Channel:        domain.MessageChannelUser,
+		Kind:           domain.MessageKindUtterance,
+		Body:           "hello",
+	}); err != nil {
+		t.Fatalf("Dispatch(user) error = %v", err)
+	}
+
+	first, err := freeMode.Step(context.Background(), StepSessionCommand{SessionID: session.ID})
+	if err != nil {
+		t.Fatalf("first Step() error = %v", err)
+	}
+	second, err := freeMode.Step(context.Background(), StepSessionCommand{SessionID: session.ID})
+	if err != nil {
+		t.Fatalf("second Step() error = %v", err)
+	}
+	third, err := freeMode.Step(context.Background(), StepSessionCommand{SessionID: session.ID})
+	if err != nil {
+		t.Fatalf("third Step() error = %v", err)
+	}
+
+	if third.Message == nil || third.Message.Sender.ID != "planner" {
+		t.Fatalf("expected planner to respond after reviewer completion, got %+v", third.Message)
+	}
+	if third.Message.ReplyTo != "message-1" {
+		t.Fatalf("expected planner completion to thread back to user message, got %+v", third.Message)
+	}
+	if got := third.Message.Metadata["addressed_to_type"]; got != "user" {
+		t.Fatalf("expected planner completion addressed_to_type user, got %+v", third.Message.Metadata)
+	}
+	if got := third.Message.Metadata["addressed_to_id"]; got != "operator" {
+		t.Fatalf("expected planner completion addressed_to_id operator, got %+v", third.Message.Metadata)
+	}
+	if second.Message == nil || second.Message.ReplyTo != first.Message.ID {
+		t.Fatalf("expected reviewer reply to satisfy planner handoff first, got %+v", second.Message)
+	}
+}
+
+func TestFreeModeServiceStopsAfterDirectSpecialistReplyWithoutHandoff(t *testing.T) {
+	repos := newFixture()
+	service := NewSessionService(repos.sessions, repos.outbox, repos.tx, repos.clock, repos.ids)
+	messageService := NewMessageService(repos.sessions, repos.messages, repos.agents, repos.vector, repos.outbox, repos.tx, repos.clock, repos.ids)
+	freeMode := NewFreeModeService(
+		repos.sessions,
+		repos.messages,
+		repos.agents,
+		fakeOrchestrator{},
+		fakeLLMProvider{},
+		messageService,
+	)
+
+	session, err := service.Create(context.Background(), CreateSessionCommand{Mode: domain.SessionModeFree})
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	if _, err := service.Start(context.Background(), SessionIDCommand{SessionID: session.ID}); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	if _, err := messageService.Dispatch(context.Background(), DispatchMessageCommand{
+		SessionID:      session.ID,
+		ConversationID: "conversation-1",
+		Sender:         domain.UserSender("operator"),
+		ToAgentIDs:     []domain.AgentID{"reviewer"},
+		Channel:        domain.MessageChannelDirect,
+		Kind:           domain.MessageKindUtterance,
+		Body:           "hey @reviewer",
+		Policy: &domain.ConversationPolicy{
+			MaxTurns:                    domain.DefaultConversationPolicy().MaxTurns,
+			MaxConsecutiveTurnsPerAgent: domain.DefaultConversationPolicy().MaxConsecutiveTurnsPerAgent,
+			RequireReplyTargetForDirect: false,
+		},
+	}); err != nil {
+		t.Fatalf("Dispatch(user) error = %v", err)
+	}
+
+	first, err := freeMode.Step(context.Background(), StepSessionCommand{SessionID: session.ID})
+	if err != nil {
+		t.Fatalf("first Step() error = %v", err)
+	}
+	if first.Agent == nil || first.Agent.ID != "reviewer" {
+		t.Fatalf("expected reviewer first, got %+v", first.Agent)
+	}
+
+	second, err := freeMode.Step(context.Background(), StepSessionCommand{SessionID: session.ID})
+	if err != nil {
+		t.Fatalf("second Step() error = %v", err)
+	}
+	if second.Stepped {
+		t.Fatalf("expected no follow-up step after specialist reply without handoff, got %+v", second)
+	}
+	if second.Reason != stepReasonNoEligibleAgents {
+		t.Fatalf("expected no eligible agents stop reason, got %+v", second)
+	}
+}
+
 func TestBodyMentionsAgentRequiresExactHandleToken(t *testing.T) {
 	if !bodyMentionsAgent("Implementation is blocked in read-only mode. @planner", "planner") {
 		t.Fatal("expected exact handle mention to count")
@@ -1039,9 +1198,12 @@ func TestFreeModeServiceStepScopesToRequestedConversation(t *testing.T) {
 
 func TestFreeModeServiceAutoStopsAtMaxSteps(t *testing.T) {
 	repos := newFixture()
+	planner := repos.agents.agents["planner"]
+	planner.Policies.AllowedHandoffs = append(planner.Policies.AllowedHandoffs, "planner")
+	repos.agents.agents["planner"] = planner
 	sessionService := NewSessionService(repos.sessions, repos.outbox, repos.tx, repos.clock, repos.ids)
 	messageService := NewMessageService(repos.sessions, repos.messages, repos.agents, repos.vector, repos.outbox, repos.tx, repos.clock, repos.ids)
-	freeModeService := NewFreeModeService(repos.sessions, repos.messages, repos.agents, fakeOrchestrator{}, fakeLLMProvider{}, messageService)
+	freeModeService := NewFreeModeService(repos.sessions, repos.messages, repos.agents, fakeOrchestrator{}, selfHandoffLLMProvider{}, messageService)
 
 	session, err := sessionService.Create(context.Background(), CreateSessionCommand{Mode: domain.SessionModeFree})
 	if err != nil {
@@ -1138,9 +1300,12 @@ func TestFreeModeServiceAutoStopsOnConsecutiveTurnLimit(t *testing.T) {
 	repos.agents.agents = map[domain.AgentID]domain.Agent{
 		"planner": mustAgent("planner"),
 	}
+	planner := repos.agents.agents["planner"]
+	planner.Policies.AllowedHandoffs = append(planner.Policies.AllowedHandoffs, "planner")
+	repos.agents.agents["planner"] = planner
 	sessionService := NewSessionService(repos.sessions, repos.outbox, repos.tx, repos.clock, repos.ids)
 	messageService := NewMessageService(repos.sessions, repos.messages, repos.agents, repos.vector, repos.outbox, repos.tx, repos.clock, repos.ids)
-	freeModeService := NewFreeModeService(repos.sessions, repos.messages, repos.agents, fakeOrchestrator{}, fakeLLMProvider{}, messageService)
+	freeModeService := NewFreeModeService(repos.sessions, repos.messages, repos.agents, fakeOrchestrator{}, selfHandoffLLMProvider{}, messageService)
 
 	session, err := sessionService.Create(context.Background(), CreateSessionCommand{Mode: domain.SessionModeFree})
 	if err != nil {
@@ -2168,6 +2333,19 @@ func (incidentalMentionLLMProvider) Generate(_ context.Context, request Generati
 	}, nil
 }
 
+type bareHandoffLLMProvider struct{}
+
+func (bareHandoffLLMProvider) Generate(_ context.Context, request GenerationRequest) (GenerationResult, error) {
+	if request.Agent.ID == "planner" {
+		return GenerationResult{
+			MessageBody: "Planning is complete. reviewer Review the latest implementation and report issues.",
+		}, nil
+	}
+	return GenerationResult{
+		MessageBody: request.Agent.Name + " reply",
+	}, nil
+}
+
 type sandboxDelegatingLLMProvider struct{}
 
 func (sandboxDelegatingLLMProvider) Generate(_ context.Context, request GenerationRequest) (GenerationResult, error) {
@@ -2291,6 +2469,14 @@ func mustWorkflow() domain.Workflow {
 			},
 		},
 	}
+}
+
+type selfHandoffLLMProvider struct{}
+
+func (selfHandoffLLMProvider) Generate(_ context.Context, request GenerationRequest) (GenerationResult, error) {
+	return GenerationResult{
+		MessageBody: request.Agent.Name + " reply\n@planner",
+	}, nil
 }
 
 func mustThreeWayMergeWorkflow() domain.Workflow {

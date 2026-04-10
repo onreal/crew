@@ -39,7 +39,7 @@ Every feature must document the business reason it exists, not only the technica
 10. Deterministic workflow execution must remain testable independently from live event-driven execution.
 11. Plain-text LLM providers and sandboxed CLI runtimes are separate provider classes and must not be collapsed into one interface for convenience.
 12. Cross-agent collaboration must flow through persisted runtime contracts, not hidden subprocess piping or direct adapter coupling.
-13. Sandboxed CLI execution in the current phase must run against copied workspaces, not directly against canonical source workspaces.
+13. Sandboxed CLI execution must support both copied-workspace and explicit `in_place` modes; copied mode remains the safe default, while `in_place` must remain explicit, auditable, and policy-driven.
 14. Plain-text provider selection belongs to canonical agent state, not process-global config, so one session may mix agents from different text providers safely.
 15. Actor-catalog selection belongs to canonical session state once a session is started, not to repeated CLI flags on every later invocation.
 16. Free-mode agent selection and free-mode reply routing are separate runtime concerns: orchestration decides which agent speaks next, while reply routing decides who that message is addressed to and which prior message it satisfies.

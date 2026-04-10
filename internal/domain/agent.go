@@ -16,6 +16,7 @@ type Agent struct {
 	ReasoningEffort      string
 	DelegationRuntime    string
 	SandboxWorkspaceRoot string
+	SandboxWorkspaceMode string
 	Tools                []string
 	Policies             AgentPolicy
 }
@@ -57,6 +58,7 @@ func NewAgent(agent Agent) (Agent, error) {
 	}
 	agent.DelegationRuntime = strings.TrimSpace(agent.DelegationRuntime)
 	agent.SandboxWorkspaceRoot = strings.TrimSpace(agent.SandboxWorkspaceRoot)
+	agent.SandboxWorkspaceMode = strings.TrimSpace(agent.SandboxWorkspaceMode)
 	agent.ReasoningEffort = normalizeReasoningEffort(agent.ReasoningEffort)
 	if agent.DelegationRuntime == "" && agent.Policies.AllowSandboxDelegation && len(agent.Policies.AllowedSandboxRuntimes) == 1 {
 		agent.DelegationRuntime = strings.TrimSpace(agent.Policies.AllowedSandboxRuntimes[0])
@@ -118,9 +120,15 @@ func (a Agent) Validate() error {
 		if a.SandboxWorkspaceRoot != "" {
 			return fmt.Errorf("agent sandbox workspace root must be empty when sandbox delegation is disabled")
 		}
+		if a.SandboxWorkspaceMode != "" {
+			return fmt.Errorf("agent sandbox workspace mode must be empty when sandbox delegation is disabled")
+		}
 	} else {
 		if a.DelegationRuntime == "" {
 			return fmt.Errorf("agent delegation runtime must not be empty when sandbox delegation is enabled")
+		}
+		if a.SandboxWorkspaceMode != "" && a.SandboxWorkspaceMode != "copied" && a.SandboxWorkspaceMode != "in_place" {
+			return fmt.Errorf("agent sandbox workspace mode must be copied or in_place when set, got %q", a.SandboxWorkspaceMode)
 		}
 		if len(a.Policies.AllowedSandboxRuntimes) > 0 && !allowsSandboxRuntime(a.Policies.AllowedSandboxRuntimes, a.DelegationRuntime) {
 			return fmt.Errorf("agent delegation runtime %q must be included in allowed sandbox runtimes", a.DelegationRuntime)

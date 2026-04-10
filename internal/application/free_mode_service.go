@@ -3,6 +3,7 @@ package application
 import (
 	"context"
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -180,6 +181,7 @@ func (s *FreeModeService) Step(ctx context.Context, cmd StepSessionCommand) (Ses
 	if err != nil {
 		return SessionStepResult{}, err
 	}
+	generation.MessageBody = normalizeBareAgentHandoff(generation.MessageBody, agent)
 	if strings.TrimSpace(generation.MessageBody) == "" {
 		return SessionStepResult{
 			SessionID:           cmd.SessionID,
@@ -353,6 +355,7 @@ func (s *FreeModeService) maybeDelegateSandboxTask(ctx context.Context, agent *d
 			"requested_from_message_id": string(message.ID),
 			"requested_by_agent_id":     string(agent.ID),
 			"delegation_runtime":        runtimeName,
+			"sandbox_workspace_mode":    strings.TrimSpace(agent.SandboxWorkspaceMode),
 		},
 	})
 	if err != nil {
@@ -594,6 +597,11 @@ func agentIneligibleReason(agent domain.Agent, history []domain.Message, lastMes
 			return ineligibleReasonConsecutiveTurnsReached
 		}
 	}
+	if !directWindow.Active && lastMessage.Sender.Type == domain.MessageSenderTypeAgent {
+		if !messageHandsOffToAgent(lastMessage, agent.ID) && !canCloseCompletedDirectReplyToUser(history, agent) {
+			return "no_handoff"
+		}
+	}
 
 	eligibilityMessage := lastMessage
 	if directWindow.Active {
@@ -623,6 +631,11 @@ func agentIneligibleReason(agent domain.Agent, history []domain.Message, lastMes
 	}
 
 	return ""
+}
+
+func canCloseCompletedDirectReplyToUser(history []domain.Message, agent domain.Agent) bool {
+	_, ok := upstreamUserRoutingForCompletedDirectReply(ReplyRoutingModeOutstandingFirst, history, agent)
+	return ok
 }
 
 func activeDirectReplyWindow(history []domain.Message) directReplyWindow {
@@ -714,6 +727,21 @@ func bodyMentionsAgent(body string, agentID domain.AgentID) bool {
 
 func isAgentIdentifierChar(ch byte) bool {
 	return (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') || ch == '_' || ch == '-'
+}
+
+func normalizeBareAgentHandoff(body string, agent domain.Agent) string {
+	if strings.TrimSpace(body) == "" {
+		return body
+	}
+	for _, target := range agent.Policies.AllowedHandoffs {
+		handle := "@" + string(target)
+		if bodyMentionsAgent(body, target) {
+			continue
+		}
+		pattern := regexp.MustCompile(`(^|[\n.!?]\s+)` + regexp.QuoteMeta(string(target)) + `(\s+[A-Z])`)
+		body = pattern.ReplaceAllString(body, `${1}`+handle+`${2}`)
+	}
+	return body
 }
 
 func containsAgentID(ids []domain.AgentID, target domain.AgentID) bool {

@@ -30,6 +30,7 @@ type SandboxProviderConfig struct {
 	BinaryPath      string
 	Model           string
 	SandboxRoot     string
+	WorkspaceMode   string
 	Timeout         time.Duration
 	AdditionalWrite []string
 }
@@ -80,6 +81,7 @@ var sandboxProviderFactories = map[string]sandboxProviderFactory{
 			BinaryPath:      cfg.BinaryPath,
 			Model:           cfg.Model,
 			SandboxRoot:     cfg.SandboxRoot,
+			WorkspaceMode:   cfg.WorkspaceMode,
 			Timeout:         cfg.Timeout,
 			AdditionalWrite: append([]string(nil), cfg.AdditionalWrite...),
 		})
@@ -249,6 +251,7 @@ func cloneSandboxProviderConfigs(configs map[string]SandboxProviderConfig) map[s
 			BinaryPath:      cfg.BinaryPath,
 			Model:           cfg.Model,
 			SandboxRoot:     cfg.SandboxRoot,
+			WorkspaceMode:   cfg.WorkspaceMode,
 			Timeout:         cfg.Timeout,
 			AdditionalWrite: append([]string(nil), cfg.AdditionalWrite...),
 		}

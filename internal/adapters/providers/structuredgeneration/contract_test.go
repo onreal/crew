@@ -32,6 +32,7 @@ func TestSystemInstructionTreatsAgentMentionsAsRealHandoffs(t *testing.T) {
 		"Treat any `@agent` mention as a real handoff or routing action.",
 		"Use `@agent` only when you are actively handing work to that agent in this reply.",
 		"Any exact `@agent` token anywhere in the message body will be treated as a real mention.",
+		"If you intend to hand work to another agent, you must use the exact `@agent` handle.",
 		"Do not mention `@agent` handles hypothetically",
 		"If you still need operator input, ask the operator directly and do not hand off yet.",
 	} {

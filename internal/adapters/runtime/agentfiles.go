@@ -22,6 +22,7 @@ type agentFile struct {
 	ReasoningEffort      string          `yaml:"reasoning_effort"`
 	DelegationRuntime    string          `yaml:"delegation_runtime"`
 	SandboxWorkspaceRoot string          `yaml:"sandbox_workspace_root"`
+	SandboxWorkspaceMode string          `yaml:"sandbox_workspace_mode"`
 	Color                string          `yaml:"color"`
 	Tools                []string        `yaml:"tools"`
 	Policies             agentFilePolicy `yaml:"policies"`
@@ -126,6 +127,7 @@ func loadAgentFile(path string) (AgentCatalogEntry, error) {
 		ReasoningEffort:      spec.ReasoningEffort,
 		DelegationRuntime:    spec.DelegationRuntime,
 		SandboxWorkspaceRoot: spec.SandboxWorkspaceRoot,
+		SandboxWorkspaceMode: spec.SandboxWorkspaceMode,
 		Tools:                append([]string(nil), spec.Tools...),
 		Policies: domain.AgentPolicy{
 			CanInitiate:            spec.Policies.CanInitiate,

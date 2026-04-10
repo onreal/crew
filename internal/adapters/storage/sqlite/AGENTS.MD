@@ -15,7 +15,7 @@ This package is responsible for replacing the JSON runtime bridge with durable r
 - agent persistence must preserve historical rows needed for auditability while exposing only the active filesystem-backed catalog to operational lookups and list calls
 - agent persistence must preserve canonical `provider` and `model` identity so mixed-provider sessions survive restart and catalog resyncs
 - agent persistence must also preserve canonical agent `reasoning_effort` so Codex-backed catalogs keep the intended reasoning level after sync, restart, and replay
-- agent persistence must preserve canonical `delegation_runtime` and `sandbox_workspace_root` so mixed CLI-runtime rooms survive restart and catalog resyncs
+- agent persistence must preserve canonical `delegation_runtime`, `sandbox_workspace_root`, and `sandbox_workspace_mode` so mixed CLI-runtime rooms survive restart and catalog resyncs
 - session persistence must preserve canonical actor-catalog selection so later invocations can reseed the correct roster automatically
 - transaction handling must preserve state-and-outbox atomicity
 - migrations must be idempotent and ordered

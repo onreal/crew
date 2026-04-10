@@ -21,7 +21,7 @@ Current operator prerequisites:
 - keep Codex CLI command shaping isolated here
 - use the shared `internal/adapters/sandbox` foundation for workspace lifecycle, subprocess execution, and changed-file capture
 - use the shared `internal/adapters/providers/structuredgeneration` contract for direct text replies so Codex text turns behave like other providers at the application boundary
-- do not let Codex mutate the canonical source workspace directly in this phase
+- honor the resolved workspace mode per task; copied mode remains the default, but explicit `in_place` tasks may mutate the canonical workspace directly and must report that execution mode in task metadata
 - capture provider-visible stdout, stderr, exit code, and execution workspace metadata for auditability
 - map application permission profiles to Codex sandbox modes explicitly and centrally
 
@@ -35,6 +35,7 @@ Current operator prerequisites:
 - packaging changed files and subprocess metadata into `SandboxTaskExecutionResult`
 - advertising support for the named text provider `codex` and the named sandbox runtime `codex` inside the routed runtime catalogs
 - honoring any per-task sandbox-root override so different agents may isolate or share Codex sandboxes intentionally
+- honoring any per-task sandbox workspace-mode override so agent-owned `sandbox_workspace_mode` settings actually change where Codex edits files
 
 ## Update Triggers
 

@@ -12,7 +12,7 @@ This package creates isolated execution workspaces, runs bounded subprocesses, a
 
 - keep provider-neutral sandbox lifecycle, workspace copy, diff, timeout, and subprocess concerns here
 - treat task `WorkspaceRoot` as canonical source input; provider adapters may execute only inside derived sandbox workspaces
-- sandbox execution must never mutate the canonical source workspace directly in this phase
+- sandbox execution may now run either in copied workspaces or, when explicitly configured, directly in the source workspace; copied mode remains the default
 - filesystem isolation must not rely on raw task IDs; sandbox task directories must be derived from safe internal names rather than direct operator- or provider-supplied path segments
 - copied sandbox preparation must reject source-workspace symlinks in this phase rather than recreating links that could write through to host paths outside the copied tree
 - artifact collection must describe changed files deterministically and must ignore internal sandbox bookkeeping files

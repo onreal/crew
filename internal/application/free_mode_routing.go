@@ -81,6 +81,9 @@ func resolveGeneratedReplyRouting(mode ReplyRoutingMode, history []domain.Messag
 			return routingFromObligation(mode, obligation)
 		}
 	}
+	if routing, ok := upstreamUserRoutingForCompletedDirectReply(mode, history, agent); ok {
+		return routing
+	}
 
 	anchor, ok := latestConversationalMessage(history)
 	if !ok {
@@ -139,6 +142,65 @@ func resolveGeneratedReplyRouting(mode ReplyRoutingMode, history []domain.Messag
 			ReplyTo:       anchor.ID,
 		},
 	}
+}
+
+func upstreamUserRoutingForCompletedDirectReply(mode ReplyRoutingMode, history []domain.Message, agent domain.Agent) (generatedReplyRouting, bool) {
+	anchor, ok := latestConversationalMessage(history)
+	if !ok ||
+		anchor.Sender.Type != domain.MessageSenderTypeAgent ||
+		anchor.Sender.ID == string(agent.ID) ||
+		anchor.Channel != domain.MessageChannelDirect ||
+		anchor.ReplyTo == "" ||
+		routingMetadataString(anchor, replyRoutingMetadataType) != replyRecipientTypeAgent ||
+		routingMetadataString(anchor, replyRoutingMetadataID) != string(agent.ID) {
+		return generatedReplyRouting{}, false
+	}
+
+	upstream, ok := firstNonAgentReplyAncestor(history, anchor.ReplyTo)
+	if !ok {
+		return generatedReplyRouting{}, false
+	}
+
+	recipientType := replyRecipientTypeConversation
+	recipientID := upstream.Sender.ID
+	if upstream.Sender.Type == domain.MessageSenderTypeUser {
+		recipientType = replyRecipientTypeUser
+	}
+
+	return generatedReplyRouting{
+		Channel: domain.MessageChannelBroadcast,
+		ReplyTo: upstream.ID,
+		Metadata: map[string]any{
+			replyRoutingMetadataMode:     string(mode),
+			replyRoutingMetadataType:     recipientType,
+			replyRoutingMetadataID:       recipientID,
+			replyRoutingMetadataAnchorID: string(upstream.ID),
+		},
+		Generation: GenerationReplyRouting{
+			Mode:          mode,
+			RecipientType: recipientType,
+			RecipientID:   recipientID,
+			ReplyTo:       upstream.ID,
+		},
+	}, true
+}
+
+func firstNonAgentReplyAncestor(history []domain.Message, replyTo domain.MessageID) (domain.Message, bool) {
+	byID := make(map[domain.MessageID]domain.Message, len(history))
+	for _, message := range history {
+		byID[message.ID] = message
+	}
+	for replyTo != "" {
+		message, ok := byID[replyTo]
+		if !ok {
+			return domain.Message{}, false
+		}
+		if message.Sender.Type != domain.MessageSenderTypeAgent {
+			return message, true
+		}
+		replyTo = message.ReplyTo
+	}
+	return domain.Message{}, false
 }
 
 func routingFromObligation(mode ReplyRoutingMode, obligation replyObligation) generatedReplyRouting {
