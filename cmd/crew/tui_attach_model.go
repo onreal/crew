@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
@@ -52,12 +53,11 @@ type attachModel struct {
 	pendingOps           int
 	pendingAgentStates   map[domain.AgentID]string
 	progressByAgent      map[domain.AgentID]application.TransientProgressEvent
-	progressHistory      []attachDisplayEvent
 	activeStepEvents     <-chan tea.Msg
 	spinnerFrame         int
 	printedStreamCount   int
-	printedReasoningCount int
 	lastPrintedHeader    string
+	bodyViewport         viewport.Model
 	width                int
 	height               int
 	layoutMainWidth      int
@@ -192,6 +192,7 @@ func newAttachModel(
 		status:             fmt.Sprintf("attached to %s / %s", options.SessionID, sendConversationID),
 		pendingAgentStates: make(map[domain.AgentID]string),
 		progressByAgent:    make(map[domain.AgentID]application.TransientProgressEvent),
+		bodyViewport:       viewport.New(1, 0),
 	}
 	model.agents, model.agentColors = mustLoadAttachAgents(model.agentsDir)
 	model.refreshInputAssist()
@@ -273,10 +274,15 @@ func (m attachModel) View() string {
 	if m.width == 0 || m.height == 0 {
 		return "Loading crew TUI..."
 	}
-	return m.styles.frame.Width(m.layoutMainWidth).Render(lipgloss.JoinVertical(
+	m.layout()
+	m.syncBodyViewport()
+	content := lipgloss.JoinVertical(
 		lipgloss.Left,
 		m.renderBody(),
 		m.renderInput(),
 		m.renderFooter(),
-	))
+	)
+	return m.styles.frame.Width(m.layoutMainWidth).Render(
+		lipgloss.PlaceVertical(m.height, lipgloss.Bottom, content),
+	)
 }

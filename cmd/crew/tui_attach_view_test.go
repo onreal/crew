@@ -45,11 +45,11 @@ func TestAttachModelViewStaysWithinConfiguredWidth(t *testing.T) {
 	if got := maxRenderedLineWidth(view); got > model.width {
 		t.Fatalf("expected rendered view width <= %d, got %d", model.width, got)
 	}
-	if strings.Contains(view, "send=conversation-1") {
-		t.Fatalf("expected room header to stay out of the managed bottom surface, got:\n%s", view)
-	}
 	if !strings.Contains(view, "Type a message or /help") {
 		t.Fatalf("expected compose area to remain visible, got:\n%s", view)
+	}
+	if !strings.Contains(view, "operator transcript text that should wrap cleanly") {
+		t.Fatalf("expected conversation body to remain visible inside the TUI, got:\n%s", view)
 	}
 }
 
@@ -78,6 +78,37 @@ func TestAttachModelEmptyStateShowsComposeSurface(t *testing.T) {
 	view := model.View()
 	if !strings.Contains(view, "Type a message or /help") {
 		t.Fatalf("expected empty room to keep the compose surface visible, got:\n%s", view)
+	}
+}
+
+func TestAttachModelViewBottomAlignsPromptSurface(t *testing.T) {
+	ui := platform.DefaultConfig().UI
+	model := newAttachModel(context.Background(), nil, liveViewOptions{SessionID: "session-1"}, "conversation-1", ui)
+	model.width, model.height = 80, 12
+	model.layout()
+	model.syncViewportContent(false)
+
+	view := model.View()
+	lines := strings.Split(view, "\n")
+	if len(lines) != model.height {
+		t.Fatalf("expected bottom-aligned view to occupy terminal height %d, got %d", model.height, len(lines))
+	}
+	if strings.TrimSpace(lines[len(lines)-1]) == "" || !strings.Contains(view, "Type a message or /help") {
+		t.Fatalf("expected prompt surface to remain visible at the bottom, got:\n%s", view)
+	}
+	if strings.TrimSpace(lines[0]) == "" && strings.TrimSpace(lines[1]) == "" {
+		t.Fatalf("expected in-window transcript/body content above the prompt, got:\n%s", view)
+	}
+}
+
+func TestAttachModelPrintedHeaderWaitsForSessionState(t *testing.T) {
+	ui := platform.DefaultConfig().UI
+	model := newAttachModel(context.Background(), nil, liveViewOptions{SessionID: "session-1"}, "conversation-1", ui)
+	model.width, model.height = 80, 12
+	model.layout()
+
+	if got := model.renderPrintedHeader(); strings.TrimSpace(got) != "" {
+		t.Fatalf("expected no printed header before session state is loaded, got:\n%s", got)
 	}
 }
 
@@ -207,6 +238,40 @@ func TestAttachModelCompactStatusShowsTotalAndPerParticipantCounts(t *testing.T)
 		if strings.Contains(status, unexpected) {
 			t.Fatalf("expected compact status to omit %q, got:\n%s", unexpected, status)
 		}
+	}
+}
+
+func TestAttachModelConversationRenderingStaysCompact(t *testing.T) {
+	ui := platform.DefaultConfig().UI
+	now := time.Now().UTC()
+	model := newAttachModel(context.Background(), nil, liveViewOptions{SessionID: "session-1"}, "conversation-1", ui)
+	model.width, model.height = 120, 24
+	model.layout()
+	model.room = attachRoomState{
+		snapshot: runtimeadapter.SessionSnapshot{
+			Session: domain.Session{ID: "session-1", Mode: domain.SessionModeFree, Status: domain.SessionStatusRunning},
+			Stream: []runtimeadapter.StreamEntry{
+				{RecordedAt: now, Payload: application.MessageDispatchedEvent{Message: domain.Message{
+					ID: "message-1", SessionID: "session-1", ConversationID: "conversation-1",
+					Sender: domain.UserSender("operator"), Channel: domain.MessageChannelUser, Kind: domain.MessageKindUtterance,
+					Body: "first block",
+				}}},
+				{RecordedAt: now.Add(time.Second), Payload: application.MessageDispatchedEvent{Message: domain.Message{
+					ID: "message-2", SessionID: "session-1", ConversationID: "conversation-1",
+					Sender: domain.AgentSender("planner"), Channel: domain.MessageChannelBroadcast, Kind: domain.MessageKindUtterance,
+					Body: "second block",
+				}}},
+			},
+		},
+		conversations: []domain.ConversationID{"conversation-1"},
+	}
+
+	rendered := model.renderConversationContent("conversation-1")
+	if !strings.Contains(rendered, "first block") || !strings.Contains(rendered, "second block") {
+		t.Fatalf("expected both blocks in rendered content, got:\n%s", rendered)
+	}
+	if got := lipgloss.Height(rendered); got > 5 {
+		t.Fatalf("expected compact transcript rendering without padded cards, got %d lines\n%s", got, rendered)
 	}
 }
 

@@ -16,7 +16,7 @@ import (
 )
 
 func (s *runtimeState) runTUISessionView(ctx context.Context, in io.Reader, out io.Writer, options liveViewOptions) error {
-	if !supportsFullScreenTUI(in, out) {
+	if options.TerminalScrollback || !supportsFullScreenTUI(in, out) {
 		err := s.runInteractiveSessionView(ctx, in, out, options)
 		if err == nil {
 			return printAttachResumeHint(out, options)
@@ -74,6 +74,9 @@ func attachResumeCommand(options liveViewOptions) string {
 	command := fmt.Sprintf("crew tui attach --session-id %s", options.SessionID)
 	if options.ConversationID != "" {
 		command += " --conversation-id " + string(options.ConversationID)
+	}
+	if options.TerminalScrollback {
+		command += " --terminal-scrollback"
 	}
 	if options.Debug {
 		command += " --debug"

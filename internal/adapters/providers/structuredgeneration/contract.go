@@ -32,6 +32,9 @@ func SystemInstruction(agent domain.Agent) string {
 	if agent.Policies.AllowSandboxDelegation {
 		builder.WriteString("\nIf sandbox delegation is required, set sandbox_request to ")
 		builder.WriteString(`{"instruction":"...", "permission_profile":"patch"}`)
+		builder.WriteString("\nYour direct text reply runs in read-only mode. Do not say you are blocked by read-only access when sandbox delegation is available.")
+		builder.WriteString("\nWhen sandbox_request is non-null, instruction must describe the actual implementation task for the sandbox runtime.")
+		builder.WriteString("\nDo not use sandbox_request to ask for access, approvals, or a writable sandbox. The permission_profile already declares the access level to request.")
 		if len(agent.Policies.AllowedSandboxRuntimes) > 0 {
 			builder.WriteString("\nAllowed sandbox runtimes for this agent: ")
 			builder.WriteString(strings.Join(agent.Policies.AllowedSandboxRuntimes, ", "))

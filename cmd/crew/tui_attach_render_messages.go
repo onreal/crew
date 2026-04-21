@@ -91,7 +91,7 @@ func canGroupDisplayEvents(a, b attachDisplayEvent) bool {
 }
 
 func (m attachModel) displayEvents(conversationID domain.ConversationID) []attachDisplayEvent {
-	events := make([]attachDisplayEvent, 0, len(m.room.snapshot.Stream)+len(m.localNotices)+len(m.progressHistory)+len(m.progressByAgent))
+	events := make([]attachDisplayEvent, 0, len(m.room.snapshot.Stream)+len(m.localNotices))
 	replySummaryByID := buildReplySummaryIndex(m.room.snapshot.Messages)
 	for _, entry := range m.room.snapshot.Stream {
 		event, ok := m.streamEntryToDisplayEvent(entry, conversationID, replySummaryByID)
@@ -104,15 +104,6 @@ func (m attachModel) displayEvents(conversationID domain.ConversationID) []attac
 			continue
 		}
 		events = append(events, notice)
-	}
-	if m.options.Reasoning {
-		for _, event := range m.progressHistory {
-			if conversationID != "" && event.ConversationID != "" && event.ConversationID != conversationID {
-				continue
-			}
-			events = append(events, event)
-		}
-		events = append(events, m.reasoningDisplayEvents(conversationID)...)
 	}
 	return events
 }
@@ -246,21 +237,6 @@ func (m attachModel) renderReasoningBlock(event attachDisplayEvent) string {
 	header += m.styles.muted.Render(" " + displayProgressKind(event.ProgressKind))
 	body := m.styles.muted.Render(m.renderMentionStyledBody(event.Body))
 	return header + "\n" + m.styles.messageBody.Render(body)
-}
-
-func (m attachModel) currentReasoningDisplayEvent() (attachDisplayEvent, bool) {
-	progress, ok := m.primaryProgressEvent()
-	if !ok {
-		return attachDisplayEvent{}, false
-	}
-	return attachDisplayEvent{
-		Kind:           "reasoning",
-		RecordedAt:     progressTimestamp(progress),
-		ConversationID: m.sendConversationID,
-		Sender:         string(progress.AgentID),
-		Body:           progress.Text,
-		ProgressKind:   displayProgressKind(progress.Kind),
-	}, true
 }
 
 func progressTimestamp(event application.TransientProgressEvent) time.Time {

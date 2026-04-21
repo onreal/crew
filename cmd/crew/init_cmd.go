@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 )
@@ -43,12 +44,14 @@ func newInitCmd() *cobra.Command {
 				}
 			}()
 
-			for _, file := range initCatalogTemplateFiles() {
-				targetPath := filepath.Join(catalogDir, file.name)
-				if err := os.WriteFile(targetPath, []byte(file.content), 0o644); err != nil {
-					return newCLIError("command_failed", fmt.Sprintf("write %s file %q: %v", localAgentsDirName, targetPath, err))
-				}
-				createdFiles = append(createdFiles, targetPath)
+			sourceDir, err := resolveInitCatalogSource()
+			if err != nil {
+				return newCLIError("command_failed", fmt.Sprintf("resolve %s seed catalog: %v", localAgentsDirName, err))
+			}
+
+			agentCount, err := copyCatalogDir(sourceDir, catalogDir, &createdFiles)
+			if err != nil {
+				return newCLIError("command_failed", fmt.Sprintf("copy %s seed catalog from %q to %q: %v", localAgentsDirName, sourceDir, catalogDir, err))
 			}
 
 			success = true
@@ -56,10 +59,63 @@ func newInitCmd() *cobra.Command {
 				"initialized":   true,
 				"catalog_dir":   catalogDir,
 				"created_files": createdFiles,
-				"agent_count":   3,
+				"agent_count":   agentCount,
 			})
 		},
 	}
+}
+
+func resolveInitCatalogSource() (string, error) {
+	if installedDir, err := resolveInstalledAgentsFallbackDir(); err != nil {
+		return "", err
+	} else if strings.TrimSpace(installedDir) != "" {
+		return installedDir, nil
+	}
+	return "", fmt.Errorf("installed fallback agent catalog was not found; run install.sh first")
+}
+
+func copyCatalogDir(sourceDir, targetDir string, createdFiles *[]string) (int, error) {
+	agentCount := 0
+	err := filepath.WalkDir(sourceDir, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if path == sourceDir {
+			return nil
+		}
+
+		relativePath, err := filepath.Rel(sourceDir, path)
+		if err != nil {
+			return err
+		}
+		targetPath := filepath.Join(targetDir, relativePath)
+
+		if entry.IsDir() {
+			return os.MkdirAll(targetPath, 0o755)
+		}
+
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if err := os.MkdirAll(filepath.Dir(targetPath), 0o755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(targetPath, content, 0o644); err != nil {
+			return err
+		}
+		*createdFiles = append(*createdFiles, targetPath)
+		if isAgentDefinitionFile(relativePath) {
+			agentCount++
+		}
+		return nil
+	})
+	return agentCount, err
+}
+
+func isAgentDefinitionFile(path string) bool {
+	extension := strings.ToLower(filepath.Ext(path))
+	return extension == ".yaml" || extension == ".yml"
 }
 
 func initCatalogTemplateFiles() []catalogTemplateFile {

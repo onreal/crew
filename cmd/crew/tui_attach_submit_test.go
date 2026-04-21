@@ -219,15 +219,15 @@ func TestAttachModelReasoningUpdateStaysOutOfConversation(t *testing.T) {
 	if !strings.Contains(next.renderInput(), "planner reasoning: checking the workspace layout") {
 		t.Fatalf("expected reasoning in activity block, got:\n%s", next.renderInput())
 	}
-	if strings.TrimSpace(next.renderBody()) != "" {
-		t.Fatalf("expected attach body to stay empty because transcript prints above the prompt, got:\n%s", next.renderBody())
+	if strings.Contains(next.renderBody(), "checking the workspace layout") {
+		t.Fatalf("expected reasoning to stay out of managed body without --reasoning, got:\n%s", next.renderBody())
 	}
 	if strings.Contains(next.renderConversationContent("conversation-1"), "checking the workspace layout") {
 		t.Fatalf("expected reasoning to stay out of conversation content, got:\n%s", next.renderConversationContent("conversation-1"))
 	}
 }
 
-func TestAttachModelReasoningFlagShowsReasoningInlineInConversation(t *testing.T) {
+func TestAttachModelReasoningFlagShowsReasoningInManagedBodyOnly(t *testing.T) {
 	ui := platform.DefaultConfig().UI
 	model := newAttachModel(context.Background(), nil, liveViewOptions{SessionID: "session-1", Reasoning: true}, "conversation-1", ui)
 	model.agents = []domain.Agent{testAttachAgent("planner", 100)}
@@ -241,16 +241,16 @@ func TestAttachModelReasoningFlagShowsReasoningInlineInConversation(t *testing.T
 	}})
 	next := updated.(attachModel)
 
-	rendered := next.renderConversationContent("conversation-1")
-	if !strings.Contains(rendered, "planner reasoning") || !strings.Contains(rendered, "checking the workspace layout") {
-		t.Fatalf("expected reasoning inline in conversation content, got:\n%s", rendered)
+	body := next.renderBody()
+	if !strings.Contains(body, "planner reasoning") || !strings.Contains(body, "checking the workspace layout") {
+		t.Fatalf("expected reasoning in managed body, got:\n%s", body)
 	}
-	if strings.TrimSpace(next.renderBody()) != "" {
-		t.Fatalf("expected attach body to stay empty because transcript prints above the prompt, got:\n%s", next.renderBody())
+	if strings.Contains(next.renderConversationContent("conversation-1"), "checking the workspace layout") {
+		t.Fatalf("expected reasoning to stay out of transcript content, got:\n%s", next.renderConversationContent("conversation-1"))
 	}
 }
 
-func TestAttachModelReasoningStaysVisibleAfterStepCompletes(t *testing.T) {
+func TestAttachModelReasoningClearsAfterStepCompletes(t *testing.T) {
 	ui := platform.DefaultConfig().UI
 	model := newAttachModel(context.Background(), nil, liveViewOptions{SessionID: "session-1", Reasoning: true}, "conversation-1", ui)
 	model.agents = []domain.Agent{testAttachAgent("planner", 100)}
@@ -271,17 +271,17 @@ func TestAttachModelReasoningStaysVisibleAfterStepCompletes(t *testing.T) {
 	})
 	next := updated.(attachModel)
 	if len(next.progressByAgent) != 0 {
-		t.Fatalf("expected in-flight reasoning state to clear after commit, got %#v", next.progressByAgent)
+		t.Fatalf("expected in-flight reasoning state to clear after step completion, got %#v", next.progressByAgent)
 	}
-	if len(next.progressHistory) == 0 {
-		t.Fatalf("expected committed reasoning history after step completion")
+	if strings.Contains(next.renderBody(), "checking the workspace layout") {
+		t.Fatalf("expected reasoning body to clear after step completion, got:\n%s", next.renderBody())
 	}
-	if !strings.Contains(next.renderConversationContent("conversation-1"), "checking the workspace layout") {
-		t.Fatalf("expected reasoning to remain visible in conversation content, got:\n%s", next.renderConversationContent("conversation-1"))
+	if strings.Contains(next.renderConversationContent("conversation-1"), "checking the workspace layout") {
+		t.Fatalf("expected reasoning to stay out of transcript content after completion, got:\n%s", next.renderConversationContent("conversation-1"))
 	}
 }
 
-func TestAttachModelReasoningHistoryKeepsAllCompletedTurns(t *testing.T) {
+func TestAttachModelReasoningShowsAllActiveAgentsOnlyWhileInFlight(t *testing.T) {
 	ui := platform.DefaultConfig().UI
 	model := newAttachModel(context.Background(), nil, liveViewOptions{SessionID: "session-1", Reasoning: true}, "conversation-1", ui)
 	model.agents = []domain.Agent{
@@ -304,28 +304,16 @@ func TestAttachModelReasoningHistoryKeepsAllCompletedTurns(t *testing.T) {
 			Provider: "codex", AgentID: domain.AgentID(step.agent), Kind: "reasoning", Text: step.text,
 		}})
 		model = updated.(attachModel)
-		var steppedAgent *domain.Agent
-		for idx := range model.agents {
-			if model.agents[idx].ID == domain.AgentID(step.agent) {
-				steppedAgent = &model.agents[idx]
-				break
-			}
-		}
-		updated, _ = model.Update(attachStepProgressMsg{
-			state: attachRoomState{snapshot: runtimeadapter.SessionSnapshot{
-				Session: domain.Session{ID: "session-1", Mode: domain.SessionModeFree, Status: domain.SessionStatusRunning},
-			}, conversations: []domain.ConversationID{"conversation-1"}},
-			step:      application.SessionStepResult{Stepped: true, Agent: steppedAgent},
-			remaining: 1,
-		})
-		model = updated.(attachModel)
 	}
 
-	rendered := model.renderConversationContent("conversation-1")
+	rendered := model.renderBody()
 	for _, expected := range []string{"planning the next steps", "reviewing the draft", "writing the final patch"} {
 		if !strings.Contains(rendered, expected) {
-			t.Fatalf("expected committed reasoning history %q in conversation content, got:\n%s", expected, rendered)
+			t.Fatalf("expected active reasoning %q in managed body, got:\n%s", expected, rendered)
 		}
+	}
+	if strings.Contains(model.renderConversationContent("conversation-1"), "writing the final patch") {
+		t.Fatalf("expected active reasoning to stay out of transcript content, got:\n%s", model.renderConversationContent("conversation-1"))
 	}
 }
 

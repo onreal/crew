@@ -107,6 +107,21 @@ func (m attachModel) renderPlainHeader() string {
 	return strings.Join(lines, "\n")
 }
 
+func (m attachModel) renderPrintedHeader() string {
+	if m.room.snapshot.Session.ID == "" {
+		return ""
+	}
+	title := m.styles.header.Render(fmt.Sprintf(
+		"crew room  session=%s  scope=%s  send=%s  mode=%s  status=%s",
+		m.options.SessionID, m.roomConversationLabel(), m.sendConversationID, m.room.snapshot.Session.Mode, m.room.snapshot.Session.Status,
+	))
+	meta := m.styles.subheader.Render(fmt.Sprintf(
+		"orchestration=%s  auto_steps=%d  poll=%s  theme=%s",
+		displayOrchestrationMode(m.options.Orchestration), m.options.AutoSteps, m.options.PollInterval, m.ui.Theme,
+	))
+	return lipgloss.JoinVertical(lipgloss.Left, title, meta)
+}
+
 func (m attachModel) renderPlainInput() string {
 	value := m.input.Value()
 	if value == "" {

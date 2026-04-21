@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"strings"
 	"time"
 
 	"crew/internal/application"
@@ -62,33 +61,6 @@ func (m *attachModel) setPendingSequenceFromHistory(history []domain.Message, ma
 		} else {
 			m.pendingAgentStates[agentID] = "queued"
 		}
-	}
-}
-
-func (m *attachModel) commitProgressHistory() {
-	if !m.options.Reasoning || len(m.progressByAgent) == 0 {
-		return
-	}
-	for _, agent := range m.agents {
-		progress, ok := m.progressByAgent[agent.ID]
-		if !ok || strings.TrimSpace(progress.Text) == "" {
-			continue
-		}
-		event := attachDisplayEvent{
-			Kind:           "reasoning",
-			RecordedAt:     progressTimestamp(progress),
-			ConversationID: m.sendConversationID,
-			Sender:         string(agent.ID),
-			Body:           progress.Text,
-			ProgressKind:   displayProgressKind(progress.Kind),
-		}
-		if len(m.progressHistory) > 0 {
-			last := m.progressHistory[len(m.progressHistory)-1]
-			if last.Sender == event.Sender && last.Body == event.Body && last.ProgressKind == event.ProgressKind {
-				continue
-			}
-		}
-		m.progressHistory = append(m.progressHistory, event)
 	}
 }
 

@@ -41,3 +41,41 @@ func TestSystemInstructionTreatsAgentMentionsAsRealHandoffs(t *testing.T) {
 		}
 	}
 }
+
+func TestSystemInstructionClarifiesSandboxDelegationContract(t *testing.T) {
+	agent, err := domain.NewAgent(domain.Agent{
+		ID:                "writer",
+		Name:              "Writer",
+		Role:              "writer",
+		SystemPrompt:      "Implement the requested changes.",
+		Provider:          "codex",
+		Model:             "gpt-5.4",
+		DelegationRuntime: "codex",
+		Policies: domain.AgentPolicy{
+			CanInitiate:            false,
+			RequireDirectMention:   true,
+			AllowBroadcast:         true,
+			AllowToolCalls:         true,
+			AllowSandboxDelegation: true,
+			AllowedSandboxRuntimes: []string{"codex"},
+			MaxConsecutiveTurns:    1,
+			MaxToolCallsPerTurn:    1,
+			Weight:                 1,
+		},
+	})
+	if err != nil {
+		t.Fatalf("NewAgent() error = %v", err)
+	}
+
+	instruction := SystemInstruction(agent)
+	for _, needle := range []string{
+		"Your direct text reply runs in read-only mode.",
+		"Do not say you are blocked by read-only access when sandbox delegation is available.",
+		"instruction must describe the actual implementation task for the sandbox runtime.",
+		"Do not use sandbox_request to ask for access, approvals, or a writable sandbox.",
+	} {
+		if !strings.Contains(instruction, needle) {
+			t.Fatalf("expected instruction to contain %q, got %q", needle, instruction)
+		}
+	}
+}

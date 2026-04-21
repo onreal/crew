@@ -18,12 +18,13 @@ func TestAttachResumeCommandUsesSessionID(t *testing.T) {
 
 func TestAttachResumeCommandKeepsPinnedConversationAndDebug(t *testing.T) {
 	got := attachResumeCommand(liveViewOptions{
-		SessionID:      "session-7",
-		ConversationID: domain.ConversationID("conversation-2"),
-		Debug:          true,
-		Reasoning:      true,
+		SessionID:          "session-7",
+		ConversationID:     domain.ConversationID("conversation-2"),
+		TerminalScrollback: true,
+		Debug:              true,
+		Reasoning:          true,
 	})
-	want := "crew tui attach --session-id session-7 --conversation-id conversation-2 --debug --reasoning"
+	want := "crew tui attach --session-id session-7 --conversation-id conversation-2 --terminal-scrollback --debug --reasoning"
 	if got != want {
 		t.Fatalf("expected %q, got %q", want, got)
 	}

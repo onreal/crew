@@ -15,17 +15,18 @@ import (
 )
 
 type liveViewOptions struct {
-	SessionID      domain.SessionID
-	ConversationID domain.ConversationID
-	AgentsDir      string
-	Follow         bool
-	PollInterval   time.Duration
-	PrintHeader    bool
-	AutoSteps      int
-	Orchestration  application.OrchestrationMode
-	ReplyRouting   application.ReplyRoutingMode
-	Debug          bool
-	Reasoning      bool
+	SessionID          domain.SessionID
+	ConversationID     domain.ConversationID
+	AgentsDir          string
+	Follow             bool
+	TerminalScrollback bool
+	PollInterval       time.Duration
+	PrintHeader        bool
+	AutoSteps          int
+	Orchestration      application.OrchestrationMode
+	ReplyRouting       application.ReplyRoutingMode
+	Debug              bool
+	Reasoning          bool
 }
 
 func (s *runtimeState) runLiveSessionView(ctx context.Context, out io.Writer, options liveViewOptions) error {

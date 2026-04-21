@@ -56,8 +56,14 @@ func TestResolveAgentsDirFallsBackToInstalledCatalogWhenNoLocalCatalogExists(t *
 func TestCrewInitCreatesPlaceholderCatalog(t *testing.T) {
 	useDefaultAgentsDirResolverForTest(t)
 
+	homeDir := t.TempDir()
+	fallbackRoot := filepath.Join(homeDir, ".local", "share", "crew")
+	copyAgentsCatalogDir(t, shippedAgentsCatalogDir(t), filepath.Join(fallbackRoot, localAgentsDirName))
+
 	workDir := t.TempDir()
 	t.Chdir(workDir)
+	t.Setenv("HOME", homeDir)
+	t.Setenv("XDG_DATA_HOME", "")
 
 	payload := runCLIJSON(t, "init")
 	catalogDir := filepath.Join(workDir, localAgentsDirName)
@@ -81,8 +87,14 @@ func TestCrewInitCreatesPlaceholderCatalog(t *testing.T) {
 func TestCrewInitFailsWhenCatalogAlreadyExists(t *testing.T) {
 	useDefaultAgentsDirResolverForTest(t)
 
+	homeDir := t.TempDir()
+	fallbackRoot := filepath.Join(homeDir, ".local", "share", "crew")
+	copyAgentsCatalogDir(t, shippedAgentsCatalogDir(t), filepath.Join(fallbackRoot, localAgentsDirName))
+
 	workDir := t.TempDir()
 	t.Chdir(workDir)
+	t.Setenv("HOME", homeDir)
+	t.Setenv("XDG_DATA_HOME", "")
 	if err := os.MkdirAll(filepath.Join(workDir, localAgentsDirName), 0o755); err != nil {
 		t.Fatalf("MkdirAll() error = %v", err)
 	}

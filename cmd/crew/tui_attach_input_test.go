@@ -195,3 +195,47 @@ func TestAttachModelRenderConversationHighlightsAgentMentions(t *testing.T) {
 		t.Fatalf("expected reviewer mention to be colorized, got:\n%s", rendered)
 	}
 }
+
+func TestAttachModelPrintedStreamEntriesRetainSenderAndMentionColors(t *testing.T) {
+	ui := platform.DefaultConfig().UI
+	model := newAttachModel(context.Background(), nil, liveViewOptions{SessionID: "session-1"}, "conversation-1", ui)
+	model.width, model.height = 120, 24
+	model.layout()
+	model.agents = []domain.Agent{testAttachAgent("planner", 100), testAttachAgent("reviewer", 90)}
+
+	events := []attachDisplayEvent{{
+		Kind:           "message",
+		ConversationID: "conversation-1",
+		Sender:         "planner",
+		Body:           "Please sync with @reviewer.",
+	}}
+
+	rendered := model.renderDisplayEvents(events)
+	wantSender := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(model.lookupAgentColor("planner"))).Render("planner")
+	wantReviewer := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(model.lookupAgentColor("reviewer"))).Render("@reviewer")
+	if !strings.Contains(rendered, wantSender) {
+		t.Fatalf("expected sender color in printed stream entries, got:\n%s", rendered)
+	}
+	if !strings.Contains(rendered, wantReviewer) {
+		t.Fatalf("expected mention color in printed stream entries, got:\n%s", rendered)
+	}
+}
+
+func TestAttachModelRenderedTranscriptDoesNotHardWrapToWindowWidth(t *testing.T) {
+	ui := platform.DefaultConfig().UI
+	model := newAttachModel(context.Background(), nil, liveViewOptions{SessionID: "session-1"}, "conversation-1", ui)
+	model.width, model.height = 40, 20
+	model.layout()
+
+	events := []attachDisplayEvent{{
+		Kind:           "message",
+		ConversationID: "conversation-1",
+		Sender:         "planner",
+		Body:           "this is a long transcript line that should be left to the terminal for resize reflow",
+	}}
+
+	rendered := model.renderDisplayEvents(events)
+	if strings.Contains(rendered, "reflow\n") || strings.Count(rendered, "\n") > 1 {
+		t.Fatalf("expected rendered transcript to avoid hard wrapping, got:\n%s", rendered)
+	}
+}

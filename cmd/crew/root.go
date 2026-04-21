@@ -1062,6 +1062,7 @@ func newTUICmd(state *runtimeState) *cobra.Command {
 	var attachReplyRouting string
 	var attachDebug bool
 	var attachReasoning bool
+	var attachTerminalScrollback bool
 	attachCmd := &cobra.Command{
 		Use:   "attach",
 		Short: "Attach an interactive live text session view in the terminal",
@@ -1108,17 +1109,18 @@ func newTUICmd(state *runtimeState) *cobra.Command {
 			}
 
 			if err := state.runTUISessionView(cmd.Context(), cmd.InOrStdin(), cmd.OutOrStdout(), liveViewOptions{
-				SessionID:      sessionID,
-				ConversationID: conversationID,
-				AgentsDir:      agentsDir,
-				Follow:         attachFollow,
-				PollInterval:   time.Duration(attachPollIntervalMillis) * time.Millisecond,
-				PrintHeader:    true,
-				AutoSteps:      autoSteps,
-				Orchestration:  orchestrationMode,
-				ReplyRouting:   replyRoutingMode,
-				Debug:          attachDebug,
-				Reasoning:      attachReasoning,
+				SessionID:          sessionID,
+				ConversationID:     conversationID,
+				AgentsDir:          agentsDir,
+				Follow:             attachFollow,
+				TerminalScrollback: attachTerminalScrollback,
+				PollInterval:       time.Duration(attachPollIntervalMillis) * time.Millisecond,
+				PrintHeader:        true,
+				AutoSteps:          autoSteps,
+				Orchestration:      orchestrationMode,
+				ReplyRouting:       replyRoutingMode,
+				Debug:              attachDebug,
+				Reasoning:          attachReasoning,
 			}); err != nil {
 				return err
 			}
@@ -1134,6 +1136,7 @@ func newTUICmd(state *runtimeState) *cobra.Command {
 	attachCmd.Flags().StringVar(&attachReplyRouting, "reply-routing", "", "Optional reply routing override: latest_speaker or reply_obligations")
 	attachCmd.Flags().BoolVar(&attachDebug, "debug", false, "Show transcript metadata such as timestamps, conversation IDs, and reply target IDs")
 	attachCmd.Flags().BoolVar(&attachReasoning, "reasoning", false, "Show live provider progress inline in the chat while a turn is running")
+	attachCmd.Flags().BoolVar(&attachTerminalScrollback, "terminal-scrollback", false, "Use append-only terminal output instead of the managed fullscreen room so history stays in terminal scrollback and mouse wheel works natively")
 
 	cmd.AddCommand(attachCmd)
 

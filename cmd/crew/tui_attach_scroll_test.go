@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
 	runtimeadapter "crew/internal/adapters/runtime"
@@ -109,17 +110,109 @@ func TestAttachModelViewLeavesTranscriptOutOfManagedBody(t *testing.T) {
 	view := model.View()
 
 	if got := lipgloss.Height(view); got > model.height {
-		t.Fatalf("expected managed view to remain compact now that transcript prints above the prompt, got %d", got)
+		t.Fatalf("expected managed view to remain within terminal height, got %d", got)
 	}
-	if strings.Contains(view, "message 1") || strings.Contains(view, "message 18") {
-		t.Fatalf("expected transcript messages to stay out of the managed body, got:\n%s", view)
+	if !strings.Contains(view, "message 18") {
+		t.Fatalf("expected latest transcript history to remain visible in the managed body, got:\n%s", view)
+	}
+}
+
+func TestAttachModelViewKeepsPromptAnchoredWhenReasoningGrows(t *testing.T) {
+	ui := platform.DefaultConfig().UI
+	model := newAttachModel(context.Background(), nil, liveViewOptions{SessionID: "session-1", Reasoning: true}, "conversation-1", ui)
+	model.agents = []domain.Agent{
+		testAttachAgent("planner", 100),
+		testAttachAgent("reviewer", 90),
+		testAttachAgent("writer", 80),
+	}
+	model.width, model.height = 80, 10
+	model.layout()
+
+	model.progressByAgent["planner"] = application.TransientProgressEvent{
+		AgentID: "planner",
+		Kind:    "reasoning",
+		Text:    strings.Repeat("planner reasoning line ", 8),
+	}
+	model.progressByAgent["reviewer"] = application.TransientProgressEvent{
+		AgentID: "reviewer",
+		Kind:    "reasoning",
+		Text:    strings.Repeat("reviewer reasoning line ", 8),
+	}
+	model.progressByAgent["writer"] = application.TransientProgressEvent{
+		AgentID: "writer",
+		Kind:    "reasoning",
+		Text:    strings.Repeat("writer reasoning line ", 8),
+	}
+
+	view := model.View()
+	if got := lipgloss.Height(view); got > model.height {
+		t.Fatalf("expected prompt surface to stay anchored within terminal height, got %d\n%s", got, view)
+	}
+	if !strings.Contains(view, "Type a message or /help") {
+		t.Fatalf("expected compose area to remain visible with active reasoning, got:\n%s", view)
+	}
+}
+
+func TestAttachModelBodyViewportTracksLayoutSize(t *testing.T) {
+	ui := platform.DefaultConfig().UI
+	model := newAttachModel(context.Background(), nil, liveViewOptions{SessionID: "session-1"}, "conversation-1", ui)
+	model.width, model.height = 96, 18
+	model.layout()
+	model.syncViewportContent(false)
+
+	if model.bodyViewport.Width != model.layoutMainWidth {
+		t.Fatalf("expected body viewport width %d, got %d", model.layoutMainWidth, model.bodyViewport.Width)
+	}
+	if model.bodyViewport.Height != model.layoutBodyHeight {
+		t.Fatalf("expected body viewport height %d, got %d", model.layoutBodyHeight, model.bodyViewport.Height)
+	}
+}
+
+func TestAttachModelWindowResizeUpdatesBodyViewport(t *testing.T) {
+	ui := platform.DefaultConfig().UI
+	now := time.Now().UTC()
+	model := newAttachModel(context.Background(), nil, liveViewOptions{SessionID: "session-1"}, "conversation-1", ui)
+	model.room = attachRoomState{snapshot: runtimeadapter.SessionSnapshot{
+		Session: domain.Session{ID: "session-1", Mode: domain.SessionModeFree, Status: domain.SessionStatusRunning},
+		Messages: []domain.Message{{
+			ID: "message-1", SessionID: "session-1", ConversationID: "conversation-1",
+			Sender: domain.UserSender("operator"), Channel: domain.MessageChannelUser, Kind: domain.MessageKindUtterance,
+			Body: strings.Repeat("resized transcript content ", 8), Timestamp: now,
+		}},
+		Stream: []runtimeadapter.StreamEntry{{
+			RecordedAt: now,
+			Payload: application.MessageDispatchedEvent{Message: domain.Message{
+				ID: "message-1", SessionID: "session-1", ConversationID: "conversation-1",
+				Sender: domain.UserSender("operator"), Channel: domain.MessageChannelUser, Kind: domain.MessageKindUtterance,
+				Body: strings.Repeat("resized transcript content ", 8),
+			}},
+		}},
+	}, conversations: []domain.ConversationID{"conversation-1"}}
+	model.width, model.height = 96, 18
+	model.layout()
+	model.syncViewportContent(false)
+
+	updated, _ := model.Update(tea.WindowSizeMsg{Width: 54, Height: 12})
+	next := updated.(attachModel)
+
+	if next.bodyViewport.Width != next.layoutMainWidth {
+		t.Fatalf("expected resized body viewport width %d, got %d", next.layoutMainWidth, next.bodyViewport.Width)
+	}
+	if next.bodyViewport.Height != next.layoutBodyHeight {
+		t.Fatalf("expected resized body viewport height %d, got %d", next.layoutBodyHeight, next.bodyViewport.Height)
+	}
+	if got := maxRenderedLineWidth(next.bodyViewport.View()); got > next.bodyViewport.Width {
+		t.Fatalf("expected viewport body width <= %d, got %d", next.bodyViewport.Width, got)
+	}
+	if !strings.Contains(next.View(), "resized transcript content") {
+		t.Fatalf("expected resized view to preserve transcript content, got:\n%s", next.View())
 	}
 }
 
 func TestAttachFooterHelpMentionsLatestHistoryInsteadOfViewportScroll(t *testing.T) {
 	help := attachFooterHelpText()
-	if !strings.Contains(help, "full transcript stays visible") {
-		t.Fatalf("expected footer help to mention on-screen history, got %q", help)
+	if !strings.Contains(help, "latest history stays on screen") {
+		t.Fatalf("expected footer help to mention in-room history, got %q", help)
 	}
 	for _, removed := range []string{"PgUp", "PgDn", "Home", "End"} {
 		if strings.Contains(help, removed) {

@@ -11,10 +11,10 @@ func (m *attachModel) layout() {
 	totalWidth := max(m.width, 1)
 	m.layoutMainWidth = max(totalWidth-1, 1)
 	m.input.Width = max(m.layoutMainWidth-2, 1)
-	headerHeight := lipgloss.Height(m.renderHeader())
 	inputHeight := lipgloss.Height(m.renderInput())
 	footerHeight := lipgloss.Height(m.renderFooter())
-	m.layoutBodyHeight = max(m.height-headerHeight-inputHeight-footerHeight, 0)
+	m.layoutBodyHeight = max(m.height-inputHeight-footerHeight, 0)
+	m.resizeBodyViewport()
 }
 
 func (m attachModel) renderHeader() string {
@@ -47,6 +47,9 @@ func (m attachModel) renderInput() string {
 	box := m.renderInputBox(width)
 	assist := renderFixedStyledLine(m.styles.inputAssist, m.renderInputAssistText(), width)
 	sections := []string{box, assist}
+	if status := strings.TrimSpace(m.renderManagedStatus(width)); status != "" {
+		sections = append(sections, status)
+	}
 	if status := strings.TrimSpace(m.renderCompactStatus(width)); status != "" {
 		sections = append(sections, truncatePlainText(status, width))
 	}
@@ -106,7 +109,10 @@ func (m attachModel) renderInputAssistText() string {
 }
 
 func (m attachModel) renderBody() string {
-	return ""
+	if m.layoutBodyHeight <= 0 {
+		return ""
+	}
+	return m.bodyViewport.View()
 }
 
 func (m attachModel) renderFooter() string {
@@ -118,21 +124,82 @@ func (m *attachModel) syncViewportContent(_ bool) {
 	content, plain := m.renderConversationPane(m.roomConversationScope(), contentWidth)
 	m.lastRoomContent = content
 	m.lastRoomPlainContent = plain
+	m.syncBodyViewport()
 }
 
 func attachFooterHelpText() string {
-	return "Enter send/accept | / commands | @ mentions | Up/Down history or assist | [/ ] send target | Tab accept | Ctrl+Y copy transcript | full transcript stays visible | Ctrl+L refresh"
+	return "Enter send/accept | / commands | @ mentions | Up/Down history or assist | [/ ] send target | Tab accept | Ctrl+Y copy transcript | latest history stays on screen | Ctrl+L refresh"
+}
+
+func (m attachModel) renderManagedStatus(width int) string {
+	status := strings.TrimSpace(m.status)
+	if m.lastError != "" {
+		return renderFixedStyledLine(m.styles.errorText, m.lastError, width)
+	}
+	if status == "" || strings.HasPrefix(status, "attached to ") {
+		return ""
+	}
+	return renderFixedStyledLine(m.styles.statusLine, status, width)
 }
 
 func (m attachModel) renderReasoningPane() string {
-	title, body, ok := m.activeReasoningPane()
-	if !ok {
-		return m.styles.muted.Render("No active reasoning.")
+	events := m.reasoningDisplayEvents(m.roomConversationScope())
+	if len(events) == 0 {
+		return ""
 	}
 	width := max(m.layoutMainWidth, 1)
-	lines := []string{renderFixedStyledLine(m.styles.sectionTitle, title, width)}
-	for _, line := range strings.Split(body, "\n") {
-		lines = append(lines, wrapRenderedText(m.styles.muted.Render(strings.TrimSpace(line)), width))
+	lines := make([]string, 0, len(events))
+	for _, event := range events {
+		lines = append(lines, wrapRenderedText(m.renderReasoningBlock(event), width))
 	}
 	return strings.Join(lines, "\n\n")
+}
+
+func (m attachModel) managedBodyContent() string {
+	body := m.lastRoomContent
+	if strings.TrimSpace(body) == "" {
+		styled, _ := m.renderEmptyConversationPane(max(m.layoutMainWidth, 1))
+		body = styled
+	}
+	if m.options.Reasoning {
+		if reasoning := strings.TrimSpace(m.renderReasoningPane()); reasoning != "" {
+			body = body + "\n\n" + reasoning
+		}
+	}
+	return body
+}
+
+func (m *attachModel) resizeBodyViewport() {
+	m.bodyViewport.Width = max(m.layoutMainWidth, 1)
+	m.bodyViewport.Height = max(m.layoutBodyHeight, 0)
+}
+
+func (m *attachModel) syncBodyViewport() {
+	m.resizeBodyViewport()
+	m.bodyViewport.SetContent(m.managedBodyContent())
+	if m.layoutBodyHeight > 0 {
+		m.bodyViewport.GotoBottom()
+	}
+}
+
+func limitRenderedHeight(content string, height int) string {
+	if height <= 0 {
+		return ""
+	}
+	lines := strings.Split(content, "\n")
+	if len(lines) <= height {
+		return content
+	}
+	return strings.Join(lines[len(lines)-height:], "\n")
+}
+
+func visibleTailLines(content string, maxLines int) string {
+	if maxLines <= 0 {
+		return ""
+	}
+	lines := strings.Split(content, "\n")
+	if len(lines) <= maxLines {
+		return strings.Join(lines, "\n")
+	}
+	return strings.Join(lines[len(lines)-maxLines:], "\n")
 }

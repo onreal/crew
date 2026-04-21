@@ -20,15 +20,12 @@ func (m attachModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.syncViewportContent(false)
 		return m, nil
 	case attachRoomStateMsg:
-		streamCountBefore := m.printedStreamCount
 		m.room = typed.state
 		m.ensureActiveConversation()
 		m.lastError = ""
 		m.syncViewportContent(false)
-		m.printedStreamCount = len(m.room.snapshot.Stream)
-		return m, tea.Batch(m.printHeaderIfChangedCmd(), m.printNewStreamEntriesCmd(streamCountBefore))
+		return m, nil
 	case attachDispatchCompleteMsg:
-		streamCountBefore := m.printedStreamCount
 		m.room = typed.state
 		m.ensureActiveConversation()
 		m.popOptimistic(typed.request.ID)
@@ -40,13 +37,11 @@ func (m attachModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.setPendingSequence(typed.autoSteps)
 			m.status = fmt.Sprintf("operator message sent, auto running %d turn(s)", typed.autoSteps)
 			m.syncViewportContent(false)
-			m.printedStreamCount = len(m.room.snapshot.Stream)
-			cmds = append(cmds, m.printHeaderIfChangedCmd(), m.printNewStreamEntriesCmd(streamCountBefore), attachContinueAutoTickCmd(typed.autoSteps))
+			cmds = append(cmds, attachContinueAutoTickCmd(typed.autoSteps))
 			return m, tea.Batch(cmds...)
 		}
 		m.syncViewportContent(false)
-		m.printedStreamCount = len(m.room.snapshot.Stream)
-		return m, tea.Batch(m.printHeaderIfChangedCmd(), m.printNewStreamEntriesCmd(streamCountBefore))
+		return m, nil
 	case attachStepStreamStartedMsg:
 		m.activeStepEvents = typed.events
 		return m, attachAwaitStepEventCmd(typed.events)
@@ -67,14 +62,11 @@ func (m attachModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 	case attachStepProgressMsg:
-		streamCountBefore := m.printedStreamCount
-		reasoningCountBefore := m.printedReasoningCount
 		m.activeStepEvents = nil
 		m.room = typed.state
 		m.ensureActiveConversation()
 		m.lastError = ""
 		hadReasoning := len(m.progressByAgent) > 0
-		m.commitProgressHistory()
 		cmds := []tea.Cmd{}
 		if typed.remaining > 1 && typed.step.Stepped {
 			m.pendingOps = 1
@@ -85,9 +77,7 @@ func (m attachModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.status = fmt.Sprintf("continuing auto run (%d left)", typed.remaining-1)
 			}
 			m.syncViewportContent(false)
-			m.printedStreamCount = len(m.room.snapshot.Stream)
-			m.printedReasoningCount = len(m.progressHistory)
-			cmds = append(cmds, m.printHeaderIfChangedCmd(), m.printNewStreamEntriesCmd(streamCountBefore), m.printNewReasoningEntriesCmd(reasoningCountBefore), attachContinueAutoTickCmd(typed.remaining-1))
+			cmds = append(cmds, attachContinueAutoTickCmd(typed.remaining-1))
 			return m, tea.Batch(cmds...)
 		}
 		m.pendingOps = 0
@@ -104,9 +94,7 @@ func (m attachModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.status = fmt.Sprintf("stopped: %s", typed.step.Reason)
 		}
 		m.syncViewportContent(false)
-		m.printedStreamCount = len(m.room.snapshot.Stream)
-		m.printedReasoningCount = len(m.progressHistory)
-		return m, tea.Batch(m.printHeaderIfChangedCmd(), m.printNewStreamEntriesCmd(streamCountBefore), m.printNewReasoningEntriesCmd(reasoningCountBefore))
+		return m, nil
 	case attachErrMsg:
 		m.activeStepEvents = nil
 		m.pendingOps = 0
@@ -115,7 +103,7 @@ func (m attachModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.lastError = typed.err.Error()
 		m.status = "room error"
 		m.syncViewportContent(false)
-		return m, m.printHeaderIfChangedCmd()
+		return m, nil
 	case attachTickMsg:
 		m.spinnerFrame++
 		return m, tea.Batch(
@@ -250,59 +238,6 @@ func (m *attachModel) submitInput(value string) tea.Cmd {
 	}
 	m.syncViewportContent(false)
 	return attachBeginDispatchTickCmd(request, effectiveAutoSteps)
-}
-
-func (m attachModel) printNewStreamEntriesCmd(from int) tea.Cmd {
-	if from < 0 {
-		from = 0
-	}
-	if from >= len(m.room.snapshot.Stream) {
-		return nil
-	}
-	replySummaryByID := buildReplySummaryIndex(m.room.snapshot.Messages)
-	events := make([]attachDisplayEvent, 0, len(m.room.snapshot.Stream)-from)
-	for _, entry := range m.room.snapshot.Stream[from:] {
-		event, ok := m.streamEntryToDisplayEvent(entry, m.roomConversationScope(), replySummaryByID)
-		if !ok {
-			continue
-		}
-		events = append(events, event)
-	}
-	if len(events) == 0 {
-		return nil
-	}
-	rendered := strings.TrimSpace(m.renderPlainDisplayEvents(events))
-	if rendered == "" {
-		return nil
-	}
-	return tea.Printf("%s", rendered)
-}
-
-func (m *attachModel) printHeaderIfChangedCmd() tea.Cmd {
-	rendered := strings.TrimSpace(m.renderHeader())
-	if rendered == "" || rendered == m.lastPrintedHeader {
-		return nil
-	}
-	m.lastPrintedHeader = rendered
-	return tea.Printf("%s", rendered)
-}
-
-func (m attachModel) printNewReasoningEntriesCmd(from int) tea.Cmd {
-	if !m.options.Reasoning {
-		return nil
-	}
-	if from < 0 {
-		from = 0
-	}
-	if from >= len(m.progressHistory) {
-		return nil
-	}
-	events := append([]attachDisplayEvent(nil), m.progressHistory[from:]...)
-	rendered := strings.TrimSpace(m.renderPlainDisplayEvents(events))
-	if rendered == "" {
-		return nil
-	}
-	return tea.Printf("%s", rendered)
 }
 
 func (m *attachModel) newAttachDispatchRequest(value string) attachDispatchRequest {
